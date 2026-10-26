@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>Brim</string>
+    <key>CFBundleDisplayName</key>
+    <string>Brim</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
+    <key>CFBundleExecutable</key>
+    <string>Brim</string>
+    <key>CFBundleIdentifier</key>
+    <string>app.brim.mac</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>14.0</string>
+    <key>LSUIElement</key>
+    <true/>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>NSPrincipalClass</key>
+    <string>NSApplication</string>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>Brim reads what Spotify and Music are playing and sends play, pause and skip.</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>The teleprompter listens while you read, so the script scrolls as you speak. Nothing is recorded or sent anywhere.</string>
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>The teleprompter recognizes what you say, on this Mac only, to follow your place in the script.</string>
+    <key>NSCameraUsageDescription</key>
+    <string>The Mirror in Brim's panel shows your camera so you can check how you look before a call. Nothing is recorded.</string>
+    <key>NSRemindersFullAccessUsageDescription</key>
+    <string>Brim shows reminders that are due soon in the island, and lets you tick them off.</string>
+    <key>NSRemindersUsageDescription</key>
+    <string>Brim shows reminders that are due soon in the island, and lets you tick them off.</string>
+    <key>NSCalendarsFullAccessUsageDescription</key>
+    <string>Brim shows your next meeting in the island, with a Join button for video calls.</string>
+    <key>NSCalendarsUsageDescription</key>
+    <string>Brim shows your next meeting in the island, with a Join button for video calls.</string>
+    <key>NSBluetoothAlwaysUsageDescription</key>
+    <string>Brim shows a notification when your headphones or other Bluetooth devices connect.</string>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>app.brim.mac</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>brim</string>
+            </array>
+        </dict>
+    </array>
+</dict>
+</plist>

@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+<defs>
+<clipPath id="clip"><rect x="100" y="100" width="824" height="824" rx="185"/></clipPath>
+<radialGradient id="bg" cx="0.5" cy="0.5" r="0.75"><stop offset="0" stop-color="#14204A"/><stop offset="0.55" stop-color="#0B0E22"/><stop offset="1" stop-color="#05060C"/></radialGradient>
+<linearGradient id="rim" x1="200" y1="0" x2="824" y2="0" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#5CE6FF"/><stop offset="0.5" stop-color="#5B7CFF"/><stop offset="1" stop-color="#A66BFF"/></linearGradient>
+<linearGradient id="fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#10132A"/><stop offset="1" stop-color="#080A17"/></linearGradient>
+<linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0.10"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/></linearGradient>
+<radialGradient id="lens" cx="0.4" cy="0.35" r="0.7"><stop offset="0" stop-color="#4C6FD0"/><stop offset="0.5" stop-color="#16204A"/><stop offset="1" stop-color="#080A18"/></radialGradient>
+<filter id="wide" x="-50%" y="-150%" width="200%" height="400%"><feGaussianBlur stdDeviation="46"/></filter>
+<filter id="mid" x="-30%" y="-80%" width="160%" height="260%"><feGaussianBlur stdDeviation="16"/></filter>
+<filter id="drop" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="14"/></filter>
+</defs>
+<rect x="100" y="114" width="824" height="824" rx="185" fill="#000" fill-opacity="0.35" filter="url(#drop)"/>
+<rect x="100" y="100" width="824" height="824" rx="185" fill="url(#bg)"/>
+<g clip-path="url(#clip)">
+<rect x="200" y="402" width="624" height="220" rx="110" fill="none" stroke="url(#rim)" stroke-width="44" filter="url(#wide)"/>
+<rect x="200" y="402" width="624" height="220" rx="110" fill="none" stroke="url(#rim)" stroke-width="18" filter="url(#mid)"/>
+<rect x="100" y="100" width="824" height="330" fill="url(#sheen)"/>
+</g>
+<rect x="200" y="402" width="624" height="220" rx="110" fill="url(#fill)"/>
+<rect x="200" y="402" width="624" height="220" rx="110" fill="none" stroke="url(#rim)" stroke-width="7"/>
+<rect x="200" y="402" width="624" height="220" rx="110" fill="none" stroke="#FFFFFF" stroke-opacity="0.5" stroke-width="2"/>
+<rect x="101.5" y="101.5" width="821" height="821" rx="184" fill="none" stroke="#FFFFFF" stroke-opacity="0.09" stroke-width="3"/>
+</svg>
