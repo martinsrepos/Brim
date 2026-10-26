@@ -25,7 +25,63 @@ https://github.com/user-attachments/assets/9db3ae34-746a-4f33-aaa2-a119ff99150d
 | <img src="docs/features/notifications.jpg" alt="A notification banner"> **Every notification.** Banners from every app, plus volume, brightness, AirPods and more. | <img src="docs/features/panel.jpg" alt="The panel"> **One hover away.** The player, your notifications, a file shelf, a mirror and your own Shortcuts. |
 | <img src="docs/features/teleprompter.jpg" alt="The teleprompter"> **A teleprompter under the camera.** It follows your voice, on your Mac only. | <img src="docs/features/lock.jpg" alt="The lock screen"> **On the lock screen.** The pill stays, and notifications only show the app. |
 
-Also: calls with a Mute button, Join for meetings, reminders, Focus timers, Keep Awake, the camera and mic dots, monitor brightness, Logitech keyboard backlight and batteries, and a look from solid black to clear glass. The [full guide](docs/GUIDE.md) has every feature.
+### All features
+
+**Notifications**
+- Notifications from every app, with the real app icon
+- Stacks in the panel, swipe or flick to clear
+- Respect Focus
+- Private on the lock screen
+- Your own notifications from scripts and Shortcuts
+
+**Music**
+- Now playing from any app, browsers included
+- Media controls with seek, shuffle, repeat and favourite
+- Song changes that swipe, play and pause that morph
+
+**Live activities**
+- Two things at once, like iPhone
+- Timers, stopwatches and Focus rounds
+- Upcoming meetings with Join
+- Calls with Mute
+- Reminders with Done
+- Downloads and AirDrop
+
+**System banners**
+- Volume
+- Microphone mute
+- Monitor brightness
+- Keyboard backlight, for Logitech MX Keys
+- Charger, battery and charge alert (MacBooks)
+- Bluetooth accessories connecting
+
+**Devices**
+- AirPods battery, like iPhone
+- Low battery for your keyboard, mouse and trackpad
+- Logitech battery
+
+**In the panel**
+- Hover to expand
+- File Shelf with AirDrop
+- Shortcuts buttons
+- Mirror
+- Keep Awake
+
+**Teleprompter**
+- Your script under the camera
+- Follow My Voice, on your Mac only
+- Script editor with highlights and pause markers
+
+**Look and behaviour**
+- Notch or floating island
+- From solid black to clear glass
+- Clock and weather when idle
+- Camera and microphone dots
+- Lock screen
+- Stays out of the way in full-screen apps and games
+- Adjustable sizes, notch wings and sounds
+
+Every feature is explained in the [full guide](docs/GUIDE.md).
 
 ## Install
 
