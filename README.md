@@ -6,7 +6,9 @@
 
 <p align="center"><img src="docs/brim-demo.gif" alt="The pill turning into music, a timer, banners, the panel and the teleprompter" width="720"></p>
 
-<p align="center"><a href="docs/brim-film-16x9.mp4"><b>Watch the one minute film</b></a></p>
+<p align="center"><a href="docs/brim-film-16x9.mp4"><b>
+https://github.com/user-attachments/assets/84fc31a4-0a07-4873-ae9f-c1a34f7632ef
+</b></a></p>
 
 ## At a glance
 
