@@ -259,3 +259,7 @@ Resources/AppIcon.icns     the app icon
 Info.plist
 build.sh
 ```
+
+
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/Z1T829JCS8)
+
