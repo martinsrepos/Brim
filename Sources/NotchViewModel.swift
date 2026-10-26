@@ -746,7 +746,7 @@ final class NotchViewModel {
         case .idle:
             return showsIdleContent
                 ? CGSize(width: Self.idleContentWidth, height: closedSize.height)
-                : closedSize
+                : CGSize(width: closedSize.width + dotsWing * 2, height: closedSize.height)
         case .live, .timer, .event, .download, .reminder, .call:
             return isIsland
                 ? CGSize(width: closedSize.width + Self.liveExtraWidth, height: closedSize.height)
@@ -842,6 +842,11 @@ final class NotchViewModel {
     func isHiddenWhenIdle(_ mode: NotchMode) -> Bool {
         mode == .idle && isIsland && hideIdleWithoutNotch && !showsPrivacyDot
     }
+
+    /// On a real notch the camera fills the idle shape, so while a dot is on
+    /// the notch grows a little on both sides and the dots sit in its right
+    /// side, inside the black, never out on the menu bar.
+    var dotsWing: CGFloat { !isIsland && hasNotch && showsPrivacyDot ? 30 : 0 }
 
     var showsPrivacyDot: Bool {
         showPrivacyDots && (privacy.cameraInUse || privacy.microphoneInUse)

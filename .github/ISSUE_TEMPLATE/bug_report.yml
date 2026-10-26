@@ -1,0 +1,41 @@
+name: Bug report
+description: Something in Brim isn't working right
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: And what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How can it be reproduced?
+      placeholder: "1. Turn on ...\n2. Send a message from ...\n3. ..."
+  - type: dropdown
+    id: style
+    attributes:
+      label: Notch or floating island?
+      options: [Notch (MacBook), Notch drawn on an external display, Floating island]
+    validations:
+      required: true
+  - type: input
+    id: mac
+    attributes:
+      label: Mac and macOS version
+      placeholder: "MacBook Pro 14\" M3, macOS 26.1"
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Brim version
+      description: Settings > About
+  - type: textarea
+    id: logs
+    attributes:
+      label: Notification Log or Diagnostics report
+      description: For notifications, the Notification Log (menu bar icon > Notification Log). For anything slow, the Diagnostics report (Settings > About). Check it for anything private before pasting.
+      render: text

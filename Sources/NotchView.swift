@@ -126,12 +126,17 @@ struct IslandRootView: View {
         .onChange(of: vm.secondaryEntry(for: vm.mode)) { _, newValue in
             if let newValue { vm.ui.bubbleEntry = newValue }
         }
-        // Notch: the camera sits in the middle, so the dots go just right of it.
-        .overlay(alignment: .topTrailing) {
+        // Notch: inside the black, just right of the camera housing (the
+        // notch grows a little for them when idle). A notch drawn on a screen
+        // without one has no camera, so they sit at its top center.
+        .overlay(alignment: .top) {
             if !vm.isIsland {
+                let count = CGFloat((vm.showPrivacyDots && vm.privacy.cameraInUse ? 1 : 0)
+                                    + (vm.showPrivacyDots && vm.privacy.microphoneInUse ? 1 : 0))
+                let dotsWidth = count * PrivacyDots.defaultSize + max(0, count - 1) * 4
                 privacyDots(size: PrivacyDots.defaultSize)
-                    .alignmentGuide(.trailing) { $0[.leading] - 8 }
-                    .offset(y: ((vm.closedSize.height - PrivacyDots.defaultSize) / 2).rounded())
+                    .offset(x: vm.hasNotch ? vm.cameraGap / 2 + 2 + dotsWidth / 2 - vm.shapeShift(for: mode) : 0,
+                            y: vm.hasNotch ? ((vm.closedSize.height - PrivacyDots.defaultSize) / 2).rounded() : 5)
             }
         }
         // A notch with a second activity grows to the right only.

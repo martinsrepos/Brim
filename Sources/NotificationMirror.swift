@@ -43,6 +43,9 @@ final class NotificationMirror {
     /// notification and post a new one for each message. Watching row numbers
     /// missed exactly those.
     private var seen: [String: Int] = [:]
+    /// The delivery date last seen for each notification, so one updated with a
+    /// newer message (Messages reuses a notification for a conversation) shows again.
+    private var seenDates: [String: Date] = [:]
     private var lastStamp = ""
     private var apps: [String: AppInfo] = [:]
     private let log = Logger(subsystem: "app.brim.mac", category: "mirror")
@@ -177,6 +180,7 @@ final class NotificationMirror {
             return
         }
         seen = Dictionary(recent.map { ($0.key, $0.fingerprint) }, uniquingKeysWith: { a, _ in a })
+        for row in recent { if let date = Self.deliveryDate(of: row) { seenDates[row.key] = date } }
         for row in recent.suffix(12) {
             if let alert = makeAlert(from: row) { onAlert(alert, false) }
         }
@@ -212,7 +216,17 @@ final class NotificationMirror {
                 if known != fingerprint {
                     seen[row.key] = fingerprint
                     let alert = makeAlert(from: row)
-                    NotificationLog.write("UPDATED  row \(row.id)  \(alert?.bundleID ?? row.appIdentifier ?? "?")  \(NotificationLog.short(alert?.title))  (not shown again)")
+                    // A newer message in the same notification (Messages does this
+                    // for a conversation) is news: show it. Anything else that
+                    // changes in place (progress, edits) isn't shown again.
+                    if let alert, let previous = seenDates[row.key],
+                       alert.date.timeIntervalSince(previous) > 1, abs(alert.date.timeIntervalSinceNow) < (Self.isMessages(alert.bundleID) ? 600 : 120) {
+                        seenDates[row.key] = alert.date
+                        NotificationLog.write("UPDATED  row \(row.id)  \(alert.bundleID ?? "?")  \(NotificationLog.short(alert.title))  -> banner (a newer message in the same notification)")
+                        onAlert(alert, true)
+                    } else {
+                        NotificationLog.write("UPDATED  row \(row.id)  \(alert?.bundleID ?? row.appIdentifier ?? "?")  \(NotificationLog.short(alert?.title))  (not shown again)")
+                    }
                 }
                 continue
             }
@@ -223,9 +237,12 @@ final class NotificationMirror {
             }
             // Something delivered long ago (e.g. while asleep) goes to history quietly.
             let age = abs(alert.date.timeIntervalSinceNow)
-            let isNew = age < 120
+            // iMessage stamps a message with when it was sent, and it can reach
+            // a Mac a few minutes later, so Messages gets a longer window.
+            let isNew = age < (Self.isMessages(alert.bundleID) ? 600 : 120)
             let outcome = isNew ? String(format: "-> banner (%.1fs after delivery)", age)
                                 : "-> history only (delivered \(Int(age))s ago)"
+            seenDates[row.key] = alert.date
             NotificationLog.write("NEW      row \(row.id)  \(alert.bundleID ?? "?")  \(NotificationLog.short(alert.title))  message: \(alert.body?.count ?? 0) chars  \(outcome)")
             onAlert(alert, isNew)
         }
@@ -233,6 +250,7 @@ final class NotificationMirror {
         if seen.count > 2_000 {
             let current = Set(rows.map(\.key))
             seen = seen.filter { current.contains($0.key) }
+            seenDates = seenDates.filter { current.contains($0.key) }
         }
     }
 
@@ -300,6 +318,18 @@ final class NotificationMirror {
             rows.append(Row(id: id, data: Data(bytes: bytes, count: count), appIdentifier: identifier, uuid: uuid))
         }
         return Array(rows.reversed())
+    }
+
+    private static func isMessages(_ bundleID: String?) -> Bool {
+        guard let id = bundleID?.lowercased() else { return false }
+        return id == "com.apple.mobilesms" || id == "com.apple.ichat"
+    }
+
+    /// Just the delivery date of a record, without building an alert.
+    private static func deliveryDate(of row: Row) -> Date? {
+        guard let plist = try? PropertyListSerialization.propertyList(from: row.data, format: nil) as? [String: Any] else { return nil }
+        if let seconds = plist["date"] as? Double { return Date(timeIntervalSinceReferenceDate: seconds) }
+        return plist["date"] as? Date
     }
 
     /// Each record's `data` is a binary property list:
@@ -385,6 +415,11 @@ final class FocusMonitor {
     private(set) var name: String?
     /// Lowercased bundle IDs the Focus allows.
     private(set) var allowedApps: Set<String> = []
+    /// The Focus lets some people through. Those people reach you in Messages,
+    /// FaceTime and calls, and Brim can't tell who sent a notification, so those
+    /// apps get through too (macOS itself still decides what it shows).
+    private(set) var allowsPeople = false
+    private static let peopleApps: Set<String> = ["com.apple.mobilesms", "com.apple.facetime", "com.apple.telephonyutilities", "com.apple.ichat"]
 
     @ObservationIgnored private var timer: Timer?
 
@@ -408,6 +443,7 @@ final class FocusMonitor {
     func allows(_ bundleID: String?) -> Bool {
         guard isActive else { return true }
         guard let id = bundleID?.lowercased() else { return false }
+        if allowsPeople, Self.peopleApps.contains(id) { return true }
         return allowedApps.contains(id) || allowedApps.contains { id.hasPrefix($0 + ".") }
     }
 
@@ -415,18 +451,21 @@ final class FocusMonitor {
         let modes = Self.activeModeIdentifiers()
         var newName: String?
         var allowed: Set<String> = []
+        var people = false
         if let mode = modes.first {
             let details = Self.modeDetails(for: mode)
             newName = details.name ?? "Focus"
             allowed = details.allowed
+            people = details.people
         }
         let active = !modes.isEmpty
-        guard active != isActive || newName != name || allowed != allowedApps else { return }
+        guard active != isActive || newName != name || allowed != allowedApps || people != allowsPeople else { return }
         isActive = active
         name = newName
         allowedApps = allowed
+        allowsPeople = people
         NotificationLog.write(active
-            ? "Focus on: \(newName ?? "Focus") (\(allowed.count) apps allowed through)"
+            ? "Focus on: \(newName ?? "Focus") (\(allowed.count) apps allowed through\(people ? ", and some people" : ""))"
             : "Focus off")
     }
 
@@ -453,15 +492,15 @@ final class FocusMonitor {
 
     /// The Focus's name, and the apps it allows (bundle IDs found anywhere
     /// under a key that mentions "allow").
-    private static func modeDetails(for mode: String) -> (name: String?, allowed: Set<String>) {
-        guard let root = json("ModeConfigurations.json") else { return (nil, []) }
+    private static func modeDetails(for mode: String) -> (name: String?, allowed: Set<String>, people: Bool) {
+        guard let root = json("ModeConfigurations.json") else { return (nil, [], false) }
         var config: Any?
         collect(in: root) { key, value in
             if key == "modeConfigurations", let all = value as? [String: Any], let match = all[mode] {
                 config = match
             }
         }
-        guard let config else { return (nil, []) }
+        guard let config else { return (nil, [], false) }
         var name: String?
         collect(in: config) { key, value in
             if name == nil, key == "name", let text = value as? String { name = text }
@@ -479,7 +518,24 @@ final class FocusMonitor {
                 }
             }
         }
-        return (name, allowed)
+        // People allowed through: a contact, a phone number or an address
+        // anywhere under an "allow" key, or a non-empty list under a key about people.
+        var people = false
+        collect(in: config) { key, value in
+            let k = key.lowercased()
+            guard k.contains("allow") || k.contains("contact") || k.contains("people") || k.contains("person") else { return }
+            if (k.contains("contact") || k.contains("people") || k.contains("person")),
+               let list = value as? [Any], !list.isEmpty { people = true }
+            collect(in: value) { _, inner in
+                if let text = inner as? String, looksLikePerson(text) { people = true }
+            }
+        }
+        return (name, allowed, people)
+    }
+
+    private static func looksLikePerson(_ text: String) -> Bool {
+        text.contains("@") || text.range(of: #"^\+?[0-9 ()-]{6,}$"#, options: .regularExpression) != nil
+            || text.hasSuffix(":ABPerson")
     }
 
     private static func looksLikeBundleID(_ text: String) -> Bool {

@@ -1,0 +1,20 @@
+name: Feature request
+description: An idea for something Brim could do
+labels: [enhancement]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like Brim to do?
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: When would you use it?
+      description: The situation matters more than the exact design.
+  - type: dropdown
+    id: style
+    attributes:
+      label: Which style do you use?
+      options: [Notch (MacBook), Floating island, Both]
