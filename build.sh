@@ -40,6 +40,7 @@ swiftc Sources/*.swift \
   -framework IOKit \
   -framework IOBluetooth \
   -framework ServiceManagement \
+  -framework Security \
   -framework EventKit \
   -framework CoreAudio \
   -framework CoreMediaIO \
@@ -129,6 +130,10 @@ case "$MODE" in
     echo "Installed to /Applications and launched."
     ;;
   dmg)
+    if [[ "$IDENTITY" == "-" ]]; then
+      echo "Warning: signing ad hoc. Brim's Update button only installs releases signed with"
+      echo "the same certificate as the copy people have, so publish with BRIM_SIGN_IDENTITY set."
+    fi
     VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Info.plist 2>/dev/null || echo 1.0)"
     DMG="build/$APP_NAME-$VERSION.dmg"
     STAGE="build/dmg"

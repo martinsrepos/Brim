@@ -80,6 +80,7 @@ https://github.com/user-attachments/assets/9db3ae34-746a-4f33-aaa2-a119ff99150d
 - Lock screen
 - Stays out of the way in full-screen apps and games
 - Adjustable sizes, notch wings and sounds
+- One-click updates from Settings
 
 Every feature is explained in the [full guide](docs/GUIDE.md).
 
@@ -91,9 +92,11 @@ Every feature is explained in the [full guide](docs/GUIDE.md).
 
 Requires macOS 14 or later. Liquid Glass needs macOS 26.
 
+**Updating:** Brim checks for new versions by itself. When one is out, Settings › About shows **Update**: one click and Brim installs it and opens again, keeping your settings and permissions. (Coming from 1.0 or 1.0.1? Install 1.1 from the DMG once; from then on it updates itself.)
+
 ## Privacy
 
-Brim asks for each permission only when a feature first needs it, and works without the ones you skip. No account, no analytics. The only thing it sends anywhere is your city's coordinates, for the weather. Notifications are read on your Mac, and Follow My Voice uses on-device speech recognition only. Details in [SECURITY.md](SECURITY.md).
+Brim asks for each permission only when a feature first needs it, and works without the ones you skip. No account, no analytics. It only goes online for two things: the weather, which gets your city's coordinates and nothing else, and a check with GitHub for a new version once a day, which sends nothing about you (you can turn it off). Notifications are read on your Mac, and Follow My Voice uses on-device speech recognition only. Details in [SECURITY.md](SECURITY.md).
 
 ## Build it yourself
 

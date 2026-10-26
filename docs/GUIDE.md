@@ -4,8 +4,6 @@ Everything about Brim in detail: every feature, every setting and permission, ho
 
 ## Everything it does
 
-> **Brim used to be called Halo.** The first time Brim starts it takes over Halo's settings and teleprompter scripts, and `./build.sh install` removes the old Halo.app. macOS ties permissions to the app, so Brim asks for them again (Full Disk Access, Input Monitoring and the rest; the Permissions pane in Settings shows what's left). If you made a signing certificate for Halo, keep using it: `BRIM_SIGN_IDENTITY="Halo Developer" ./build.sh install`.
-
 - **Notifications** from every app (Messages, WhatsApp, Mail, Slack...), mirrored from Notification Center, with the real app icon. Website notifications from Safari show Safari's icon and the site's name. Click one to open the app.
 - **System events**: charger plugged in or unplugged, low battery, Bluetooth accessories connecting (headphones, speakers, keyboards, mice, controllers; one banner per change). Your Watch, iPhone, iPad and Macs are left out: they link up in the background all the time.
 - **AirPods battery, like iPhone**: when your AirPods connect, or when you open their case right next to the Mac, a card shows each AirPod and the case as battery rings (green, red at 20% and below, a bolt while charging).
@@ -125,11 +123,21 @@ Brim menu bar icon > **Settings…** (or Cmd + , while the menu is open). It's l
 - **Permissions**: every permission Brim uses (Full Disk Access, Calendars, Reminders, Camera, Microphone, Speech Recognition, Input Monitoring, Bluetooth, and control of Music and Spotify), what each is for, and whether it's allowed, not allowed or not asked yet, with a button to the right page of System Settings when one is off. It updates when you come back from System Settings.
 - **Sound**: volume and microphone mute banners.
 - **Teleprompter**: Follow My Voice, text size, width, height, speed, countdown, hiding from screen sharing, mirrored text, and the shortcuts.
-- **About**: the version and the diagnostics report (see below).
+- **About**: the version, Software Update (see below) and the diagnostics report (see below).
+
+## Updates
+
+Settings › About › **Software Update**. **Check for Updates** asks GitHub for the latest release. When there's a newer one, the button becomes **Update to 1.x**: Brim downloads the DMG from the release, checks that the app inside is Brim, newer, intact and signed with the same certificate as your copy, swaps it in and opens again. Your settings and permissions (Full Disk Access included) stay, because the new copy is signed the same way. If anything doesn't match, nothing is changed and you get a link to the download page.
+
+With **Check for updates automatically** on (the default), Brim looks once a day and shows a banner the first time it finds a new version; click it to go to the update. The About pane gets a badge, like Software Update in System Settings, and the menu bar menu shows **Update to Brim 1.x…**. The check sends nothing about you.
+
+A few cases where Brim can't update itself and opens the download page instead: a copy you built yourself without a signing certificate (ad hoc), one that's still running from the DMG or from Downloads (move it to Applications first), and a folder Brim isn't allowed to write to.
+
+Versions before 1.1 don't have this, so install 1.1 from the DMG once.
 
 ## Menu bar options
 
-Click the Brim icon in the menu bar for: **Show Mac Notifications**, **Timer**, **Clear Notifications**, **Notification Log…** (see below), **Appearance** (Show on Lock Screen, hide the pill when idle on screens without a notch), **Launch at Login**, **Send Test Notification**, and **Quit**.
+Click the Brim icon in the menu bar for: **Show Mac Notifications**, **Timer**, **Clear Notifications**, **Notification Log…** (see below), **Appearance** (Show on Lock Screen, hide the pill when idle on screens without a notch), **Launch at Login**, **Send Test Notification**, **Check for Updates…** (or **Update to Brim 1.x…** when one is waiting), and **Quit**.
 
 ## How the lock screen works
 

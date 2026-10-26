@@ -131,6 +131,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         setupActivities()
         setupStatusItem()
+
+        Updater.shared.onFound = { [weak self] release in
+            self?.alerts.post(NotchAlert(symbol: "arrow.down.circle.fill", tint: .blue,
+                                         title: "Brim \(release.version) Is Available",
+                                         body: "Click to update. It takes a few seconds.",
+                                         duration: 8, action: .openUpdate))
+        }
+        Updater.shared.start()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -146,6 +154,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         alerts.onAction = { [weak self] action in
             switch action {
             case .startFocus: self?.timer.startFocus()
+            case .openUpdate: self?.settings.show(pane: .about)
             }
         }
         timer.onFinish = { [weak self] kind in
@@ -509,6 +518,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(login)
         menu.addItem(menuItem("Send Test Notification", #selector(sendTest)))
         menu.addItem(.separator())
+        if let update = Updater.shared.update {
+            menu.addItem(menuItem("Update to Brim \(update.version)…", #selector(openUpdate)))
+        } else {
+            menu.addItem(menuItem("Check for Updates…", #selector(checkForUpdates)))
+        }
         menu.addItem(menuItem("Settings…", #selector(openSettings), key: ","))
         menu.addItem(menuItem("Quit Brim", #selector(quit), key: "q"))
     }
@@ -584,6 +598,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func openSettings() {
         settings.show()
+    }
+
+    @objc private func openUpdate() {
+        settings.show(pane: .about)
+    }
+
+    @objc private func checkForUpdates() {
+        settings.show(pane: .about)
+        Updater.shared.checkNow()
     }
 
     @objc private func quit() {

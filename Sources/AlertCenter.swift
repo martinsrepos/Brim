@@ -50,6 +50,8 @@ struct NotchAlert: Identifiable, Equatable {
 enum AlertAction: Equatable {
     /// "Break Over": start the next Focus round.
     case startFocus
+    /// "Brim x.y is available": opens Settings › About.
+    case openUpdate
 }
 
 /// Queues notifications, shows them one at a time, and keeps a short history

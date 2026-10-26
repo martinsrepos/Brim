@@ -23,6 +23,18 @@ github: [your-username]
 ko_fi: your-name
 ```
 
+## Publishing an update (so the Update button finds it)
+
+Brim's Update button reads the **latest release** on GitHub. For it to work:
+
+1. Raise the version in `Info.plist`: `CFBundleShortVersionString` (for example 1.1.0 to 1.2.0) and `CFBundleVersion` (one more than before).
+2. Build with the **same signing certificate** every time: `BRIM_SIGN_IDENTITY="Halo Developer" ./build.sh dmg`. Brim refuses an update signed by any other certificate, and a different certificate would also make macOS forget the permissions.
+3. Tag the release with the same number: `v1.2.0`. Brim compares the tag with its own version.
+4. Attach the DMG (`build/Brim-1.2.0.dmg`). Brim takes the first `.dmg` in the release.
+5. Publish it as a normal release, not a draft or pre-release: Brim skips those.
+
+Within a day, everyone with automatic checks on sees a banner. Anyone can click Check for Updates in Settings › About to get it straight away.
+
 ## First release notes (v1.0)
 
 Brim turns the top of your Mac's screen into a Dynamic Island.

@@ -35,7 +35,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .teleprompter: return "Your script under the camera, for calls and recordings."
         case .controls: return "Banners when the volume or the microphone changes."
         case .devices: return "Your monitor's brightness, and Logitech keyboards and mice."
-        case .about: return "Version, and a report of what Brim has been doing."
+        case .about: return "Version and updates, and a report of what Brim has been doing."
         }
     }
 
@@ -161,6 +161,8 @@ struct SettingsView: View {
                         Text(item.title)
                     }
                     .padding(.vertical, 1)
+                    // Like Software Update in System Settings.
+                    .badge(item == .about && Updater.shared.hasUpdate ? 1 : 0)
                     .tag(item)
                 }
             }
@@ -685,9 +687,27 @@ struct SettingsView: View {
 
     @ViewBuilder
     private var about: some View {
+        let updater = Updater.shared
         Section {
             LabeledContent("Version") {
                 Text(Self.version).foregroundStyle(.secondary)
+            }
+            HStack(alignment: .center) {
+                RowLabel("Software Update", symbol: "arrow.down", color: .blue)
+                Spacer(minLength: 12)
+                updateControl(updater)
+            }
+            Toggle("Check for updates automatically", isOn: Binding(
+                get: { updater.checksAutomatically },
+                set: { updater.setChecksAutomatically($0) }))
+        } footer: {
+            VStack(alignment: .leading, spacing: 6) {
+                footnote(updateNote(updater))
+                if updater.hasUpdate || updater.phase != .idle {
+                    Button(updateLinkTitle(updater)) { updater.openReleasePage() }
+                        .buttonStyle(.link)
+                        .font(.footnote)
+                }
             }
         }
 
@@ -726,6 +746,72 @@ struct SettingsView: View {
         } footer: {
             footnote("Measures Brim for five seconds, then saves a text file with what it has been doing since it started: CPU and memory, how often each part checks something, sleep and wake history, and recent events. It opens in Finder, in Library/Logs/Brim. No notification text, messages or file names, and it stays on your Mac unless you share it.")
         }
+    }
+
+    // MARK: - Updates
+
+    @ViewBuilder
+    private func updateControl(_ updater: Updater) -> some View {
+        switch updater.phase {
+        case .checking:
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text("Checking\u{2026}").foregroundStyle(.secondary)
+            }
+        case .downloading(let fraction):
+            HStack(spacing: 8) {
+                if let fraction {
+                    ProgressView(value: fraction).frame(width: 110)
+                } else {
+                    ProgressView().controlSize(.small)
+                }
+                Button("Cancel") { updater.cancel() }
+            }
+        case .installing:
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text("Installing\u{2026}").foregroundStyle(.secondary)
+            }
+        default:
+            if let update = updater.update {
+                Button(updater.canInstall && update.dmg != nil ? "Update to \(update.version)" : "Download \(update.version)\u{2026}") {
+                    updater.install()
+                }
+                .buttonStyle(.borderedProminent)
+            } else {
+                Button("Check for Updates") { updater.checkNow() }
+            }
+        }
+    }
+
+    private func updateLinkTitle(_ updater: Updater) -> String {
+        guard updater.hasUpdate else { return "All Releases" }
+        if case .failed = updater.phase { return "Download from GitHub" }
+        return "What\u{2019}s New"
+    }
+
+    private func updateNote(_ updater: Updater) -> String {
+        let checked = updater.lastChecked.map { " Checked \($0.formatted(.relative(presentation: .named)))." } ?? ""
+        switch updater.phase {
+        case .failed(let message):
+            return message
+        case .downloading, .installing:
+            return "Brim opens again by itself when it\u{2019}s done. Your settings and permissions stay as they are."
+        case .checking:
+            return "Asking GitHub for the latest release."
+        default:
+            break
+        }
+        if let update = updater.update {
+            if updater.canInstall && update.dmg != nil {
+                return "Brim \(update.version) is out. Brim downloads it, makes sure it\u{2019}s signed by the same developer as this copy, swaps it in and opens again. Your settings and permissions stay."
+            }
+            return "Brim \(update.version) is out. This copy can\u{2019}t update itself (it was built without a signing certificate), so the button opens the download page."
+        }
+        if updater.phase == .upToDate {
+            return "Brim \(Updater.currentVersion) is the latest version.\(checked)"
+        }
+        return "Brim asks GitHub for the latest release and sends nothing about you. With automatic checks on, it looks once a day.\(checked)"
     }
 
     /// One credit: what, who, and links (and the license file, when one ships).
@@ -779,7 +865,11 @@ final class SettingsWindowController {
         self.vm = vm
     }
 
-    func show() {
+    /// Opens the window, on a given pane if there is one.
+    func show(pane: SettingsPane? = nil) {
+        if let pane {
+            UserDefaults.standard.set(pane.rawValue, forKey: "settingsPane")
+        }
         if window == nil {
             let controller = NSHostingController(rootView: SettingsView(vm: vm, state: state))
             let window = NSWindow(contentViewController: controller)
