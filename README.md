@@ -9,6 +9,8 @@
 
 # Brim
 
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/Z1T829JCS8)
+
 **A Dynamic Island for your Mac.** Notifications, music, timers, a teleprompter and the small things your Mac tells you, in one black pill that lives in the notch or floats at the top of any display.
 
 Brim is free and open source. It gets updates often, and new features come from the people who use it: if there's something you'd like it to do, [ask for it](https://github.com/martinsrepos/Brim/issues/new?template=feature_request.yml).
@@ -93,6 +95,8 @@ Every feature is explained in the [full guide](docs/GUIDE.md).
 Requires macOS 14 or later. Liquid Glass needs macOS 26.
 
 **Updating:** Brim checks for new versions by itself. When one is out, Settings › About shows **Update**: one click and Brim installs it and opens again, keeping your settings and permissions. (Coming from 1.0 or 1.0.1? Install 1.1 from the DMG once; from then on it updates itself.)
+
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/Z1T829JCS8)
 
 ## Privacy
 
