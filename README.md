@@ -9,14 +9,13 @@
 
 # Brim
 
-[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/Z1T829JCS8)
-
 **A Dynamic Island for your Mac.** Notifications, music, timers, a teleprompter and the small things your Mac tells you, in one black pill that lives in the notch or floats at the top of any display.
 
 Brim is free and open source. It gets updates often, and new features come from the people who use it: if there's something you'd like it to do, [ask for it](https://github.com/martinsrepos/Brim/issues/new?template=feature_request.yml).
 
-https://github.com/user-attachments/assets/921c8aef-708e-42f4-abbc-ddd7e082addc
+<p align="center"><img src="docs/brim-demo.gif" alt="The pill turning into music, a timer, banners, the panel and the teleprompter" width="720"></p>
 
+<p align="center"><a href="docs/brim-film-16x9.mp4"><b>Watch the one minute film</b></a></p>
 
 ## What it does
 
@@ -90,8 +89,6 @@ https://github.com/user-attachments/assets/921c8aef-708e-42f4-abbc-ddd7e082addc
 Every feature is explained in the [full guide](docs/GUIDE.md).
 
 ## Install
-
-[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/Z1T829JCS8)
 
 1. Download the **Brim DMG** from the [latest release](https://github.com/martinsrepos/Brim/releases/latest) and drag Brim to Applications.
 2. Open it. The first time, macOS says it can't check Brim for malware (it isn't notarized yet): go to **System Settings › Privacy & Security**, scroll down and click **Open Anyway**.
