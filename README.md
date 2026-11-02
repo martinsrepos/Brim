@@ -15,6 +15,8 @@
 
 Brim is free and open source. It gets updates often, and new features come from the people who use it: if there's something you'd like it to do, [ask for it](https://github.com/martinsrepos/Brim/issues/new?template=feature_request.yml).
 
+https://github.com/user-attachments/assets/a60711ac-360b-47cd-bfa9-bc87316d16fc
+
 https://github.com/user-attachments/assets/b6e57fea-115d-4773-99e3-25a7d732c283
 
 ## What it does
