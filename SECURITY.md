@@ -31,3 +31,9 @@ So you know what to look at:
 - **Camera:** only while the mirror is open in the panel.
 - **Input Monitoring:** only to talk to Logitech keyboards and mice over HID++ for their battery and backlight.
 - **Helper:** the Now Playing helper (Vendor/mediaremote-adapter, BSD licence) runs inside Brim to read what's playing.
+
+## How releases are checked
+
+- Every change to the code is scanned by GitHub's CodeQL, and the results are public in the Security tab.
+- OpenSSF Scorecard rates the repository's security practices every week (the badge in the README).
+- Releases are immutable: once one is published, its DMG and its tag can't be swapped or moved, and GitHub signs a record of them.

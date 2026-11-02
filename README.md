@@ -4,6 +4,8 @@
   <a href="https://github.com/martinsrepos/Brim/releases/latest"><img src="https://img.shields.io/github/v/release/martinsrepos/Brim?label=download" alt="Latest release"></a>
   <img src="https://img.shields.io/badge/macOS-14%2B-black" alt="macOS 14 or later">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT licence"></a>
+  <a href="https://github.com/martinsrepos/Brim/actions/workflows/codeql.yml"><img src="https://github.com/martinsrepos/Brim/actions/workflows/codeql.yml/badge.svg" alt="CodeQL"></a>
+  <a href="https://scorecard.dev/viewer/?uri=github.com/martinsrepos/Brim"><img src="https://api.scorecard.dev/projects/github.com/martinsrepos/Brim/badge" alt="OpenSSF Scorecard"></a>
   <a href="https://github.com/martinsrepos/Brim/issues/new?template=feature_request.yml"><img src="https://img.shields.io/badge/ideas-welcome-5C79F5" alt="Ideas welcome"></a>
 </p>
 
