@@ -162,9 +162,9 @@ final class SpriteSheetView: NSView {
 /// ahead of time for your AirPods, and only the last few are kept.
 @MainActor
 enum SpriteSheets {
-    static let columns = 12
-    static let frameCount = 144
-    static let fps = 24.0
+    nonisolated static let columns = 12
+    nonisolated static let frameCount = 144
+    nonisolated static let fps = 24.0
     private static var cache: [URL: [CGImage]] = [:]
     private static var order: [URL] = []
     private static var loading: [URL: Task<[CGImage]?, Never>] = [:]

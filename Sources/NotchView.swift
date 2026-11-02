@@ -2033,7 +2033,7 @@ struct ExpandedView: View {
                 .frame(height: layout.headerHeight)
                 .padding(.top, layout.headerTop)
 
-            HStack(alignment: .top, spacing: 16) {
+            HStack(alignment: .top, spacing: fs(16)) {
                 Group {
                     if ui.showsMirror {
                         MirrorView { withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) { ui.showsMirror = false } }
@@ -2731,11 +2731,11 @@ struct PlayerView: View {
 
     var body: some View {
         if let track = media.track {
-            HStack(alignment: .top, spacing: 14) {
+            HStack(alignment: .top, spacing: fs(14)) {
                 // The island draws the artwork here (it flies in from the pill).
                 Color.clear.frame(width: PanelLayout.artworkSize, height: PanelLayout.artworkSize)
 
-                VStack(alignment: .leading, spacing: 7) {
+                VStack(alignment: .leading, spacing: fs(7)) {
                     // Click the song to open the app that's playing it.
                     ZStack(alignment: .leading) {
                         VStack(alignment: .leading, spacing: 1) {
@@ -2775,7 +2775,7 @@ struct PlayerView: View {
                         }
                     }
                     ProgressBar(media: media)
-                    HStack(spacing: 6) {
+                    HStack(spacing: fs(6)) {
                         ModeButton(id: "shuffle", symbol: "shuffle", isOn: media.shuffleOn == true,
                                    label: media.shuffleOn == true ? "Shuffle on" : "Shuffle off") { media.toggleShuffle() }
                         ControlButton(id: "previous", symbol: "backward.fill", size: 14) { media.previous() }
@@ -2811,7 +2811,7 @@ struct ModeButton: View {
                 .font(.system(size: fs(11), weight: .semibold))
                 .foregroundStyle(isOn ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(HierarchicalShapeStyle.secondary))
                 .contentTransition(.symbolEffect(.replace))
-                .frame(width: 26, height: 24)
+                .frame(width: fs(26), height: fs(24))
                 .background(Circle().fill(Color.primary.opacity(ui.hoveredControl == id ? 0.1 : 0)))
                 .contentShape(Rectangle())
         }
@@ -3013,12 +3013,12 @@ struct ControlButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: size, weight: .semibold))
+                .font(.system(size: fs(size), weight: .semibold))
                 .contentTransition(.symbolEffect(.replace))
                 // Play and pause morph into each other (also when the music
                 // app changes state on its own).
                 .animation(.spring(response: 0.3, dampingFraction: 0.8), value: symbol)
-                .frame(width: size + 18, height: size + 14)
+                .frame(width: fs(size + 18), height: fs(size + 14))
                 .background(Circle().fill(Color.primary.opacity(hovering ? 0.1 : 0)))
                 .animation(.easeOut(duration: 0.15), value: hovering)
                 .contentShape(Circle())

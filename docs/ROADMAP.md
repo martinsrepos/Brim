@@ -31,6 +31,10 @@ What's planned for Brim. Ideas and requests are welcome: [open a feature request
 - Live Activities with progress (scans, cleanups, downloads) show a filling ring and a check mark when done.
 - Deliveries and rides read properly: the app's title, status, short text and progress bar, in the app's colour, also on the lock screen.
 
+## Done in 1.4.1
+
+- Text Size is Default, Large or Extra Large. With larger text the player's artwork, controls and spacing grow in step, and the panel grows only as much as it needs, so there's no empty space under the player.
+
 ## Next
 
 - **3D clips for Beats**, rendered like the AirPods ones.

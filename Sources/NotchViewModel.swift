@@ -90,20 +90,27 @@ final class NotchViewModel {
     /// The expanded panel as drawn: bigger text, a bigger panel (as wide as
     /// the window allows).
     var panelSize: CGSize {
-        CGSize(width: min((basePanelSize.width * textScale).rounded(), Self.canvas.width - 40),
-               height: (basePanelSize.height * textScale).rounded())
+        // Only the part under the header grows (the header's buttons keep
+        // their size), so the player fills the extra height instead of
+        // leaving a gap under it.
+        let fixed = PanelLayout.island.contentTop + PanelLayout.island.margin
+        return CGSize(width: min((basePanelSize.width * sizeScale).rounded(), Self.canvas.width - 40),
+                      height: (fixed + (basePanelSize.height - fixed) * sizeScale).rounded())
     }
     /// Settings > Appearance > Text Size: every text in the island, the pill
     /// and the panel grow with it (a real notch keeps its height).
     private(set) var textScale: CGFloat
+    /// How much the pill, banners and panel grow with the text (never
+    /// smaller than the sizes from Settings).
+    var sizeScale: CGFloat { max(1, textScale) }
     static let textScales: [(title: String, value: CGFloat)] = [
-        ("Small", 0.9), ("Default", 1), ("Large", 1.12), ("Extra Large", 1.25),
+        ("Default", 1), ("Large", 1.12), ("Extra Large", 1.25),
     ]
     /// The pill as drawn on screens without a notch: Settings' size, scaled
     /// with the text.
     var scaledPillSize: CGSize {
-        CGSize(width: (pillSize.width * textScale).rounded(),
-               height: (pillSize.height * textScale).rounded().clamped(to: Self.pillHeightRange.lowerBound...70))
+        CGSize(width: (pillSize.width * sizeScale).rounded(),
+               height: (pillSize.height * sizeScale).rounded().clamped(to: Self.pillHeightRange.lowerBound...70))
     }
     /// Gap between the top of the screen and the island (Settings).
     private(set) var islandOffset: CGFloat
@@ -249,7 +256,8 @@ final class NotchViewModel {
         let panel = Self.loadSize("panel", default: Self.defaultPanel)
         self.pillSize = CGSize(width: pill.width.clamped(to: Self.pillWidthRange),
                                height: pill.height.clamped(to: Self.pillHeightRange))
-        let scale = CGFloat(defaults.object(forKey: "textScale") as? Double ?? 1)
+        // (Small went away in 1.4.1: it reads as Default.)
+        let scale = max(1, CGFloat(defaults.object(forKey: "textScale") as? Double ?? 1))
         self.textScale = scale
         TextScale.factor = scale
         self.basePanelSize = CGSize(width: panel.width.clamped(to: Self.panelWidthRange),
@@ -762,8 +770,8 @@ final class NotchViewModel {
     /// have more to say), the player the rest, never less than it needs.
     var activityColumnWidth: CGFloat {
         let inner = panelSize.width - panelLayout.margin * 2 - 33
-        let player = 280 * textScale
-        return min(max(inner * 0.53, 200 * textScale), inner - player).rounded()
+        let player = 280 * sizeScale
+        return min(max(inner * 0.53, 200 * sizeScale), inner - player).rounded()
     }
 
     var panelLayout: PanelLayout {
@@ -800,7 +808,7 @@ final class NotchViewModel {
 
     /// On a notch, the camera sits in the middle, so content goes in "wings" this
     /// wide on each side (Settings > Appearance > Notch Wings).
-    var wing: CGFloat { (wingWidth * textScale).rounded() }
+    var wing: CGFloat { (wingWidth * sizeScale).rounded() }
 
     /// Whether the compact live state has room for the song title (no camera
     /// in the middle: an island, or a drawn notch on a screen without one).
@@ -823,26 +831,26 @@ final class NotchViewModel {
                 // for the camera dots when they're on).
                 return idleUsesWings
                     ? CGSize(width: closedSize.width + (wing + dotsWing) * 2, height: closedSize.height)
-                    : CGSize(width: (Self.idleContentWidth * textScale).rounded(), height: closedSize.height)
+                    : CGSize(width: (Self.idleContentWidth * sizeScale).rounded(), height: closedSize.height)
             }
             return CGSize(width: closedSize.width + dotsWing * 2, height: closedSize.height)
         case .live, .timer, .event, .download, .reminder, .call, .external:
             return isIsland
-                ? CGSize(width: closedSize.width + (Self.liveExtraWidth * textScale).rounded(), height: closedSize.height)
+                ? CGSize(width: closedSize.width + (Self.liveExtraWidth * sizeScale).rounded(), height: closedSize.height)
                 : CGSize(width: closedSize.width + wing * 2 + (notchSplit(for: mode) ? notchExtension : 0),
                          height: closedSize.height)
         case .locked, .unlocking:
             // Island: just the lock, as wide as the idle clock. Notch: the lock
             // needs a wing beside the camera.
             return isIsland
-                ? CGSize(width: (Self.idleContentWidth * textScale).rounded(), height: closedSize.height)
+                ? CGSize(width: (Self.idleContentWidth * sizeScale).rounded(), height: closedSize.height)
                 : CGSize(width: closedSize.width + wing * 2, height: closedSize.height)
         case .banner:
             return isIsland
-                ? CGSize(width: min(max(panelSize.width - 180, 340 * textScale), 460 * textScale).rounded(),
-                         height: (72 * textScale).rounded())
-                : CGSize(width: max(closedSize.width + wing * 2 + 140 * textScale, 380 * textScale).rounded(),
-                         height: closedSize.height + (66 * textScale).rounded())
+                ? CGSize(width: min(max(panelSize.width - 180, 340 * sizeScale), 460 * sizeScale).rounded(),
+                         height: (72 * sizeScale).rounded())
+                : CGSize(width: max(closedSize.width + wing * 2 + 140 * sizeScale, 380 * sizeScale).rounded(),
+                         height: closedSize.height + (66 * sizeScale).rounded())
         case .expanded:
             // Same content area on both kinds of screen; only the header differs.
             let island = PanelLayout.island
@@ -961,8 +969,9 @@ struct PanelLayout: Equatable {
     /// Where the player row (and its artwork) starts.
     var contentTop: CGFloat
 
-    static let artworkSize: CGFloat = 84
-    static let artworkCorner: CGFloat = 12
+    /// The player's artwork grows with larger text, like the lines beside it.
+    static var artworkSize: CGFloat { (84 * max(1, TextScale.factor)).rounded() }
+    static var artworkCorner: CGFloat { (12 * max(1, TextScale.factor)).rounded() }
     /// The header's round buttons are concentric with the panel's 32pt
     /// corner: 13pt radius, centered 32pt from the top and right edges (19pt
     /// in from each), so the last one nests in the curve.
