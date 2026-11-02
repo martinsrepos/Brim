@@ -328,7 +328,11 @@ final class LiveActivityMonitor {
     /// Short readable text, not an ID, a link or a code.
     private static func isReadable(_ text: String) -> Bool {
         let t = text.trimmingCharacters(in: .whitespaces)
-        guard (1...60).contains(t.count), !t.contains("://") else { return false }
+        guard (1...90).contains(t.count), !t.contains("://") else { return false }
+        // Asset names ("dh:customer-assets/...svg") and enum values
+        // ("ANIMATED", "POSITIVE", "IN_PROGRESS"), not words for people.
+        if t.contains("/") && !t.contains(" ") { return false }
+        if t.range(of: "^[A-Z0-9_]{3,}$", options: .regularExpression) != nil { return false }
         if t.range(of: "^[0-9A-Fa-f-]{16,}$", options: .regularExpression) != nil { return false }
         if t.count > 24 && !t.contains(" ") { return false }
         return true
@@ -372,34 +376,79 @@ final class LiveActivityMonitor {
     /// Any other app: its main line, a second line, and the value that changes.
     private static func general(state: Any?, attributes: Any?, appName: String) -> ExternalActivity.General {
         let live = leaves(state), fixed = leaves(attributes)
-        let textPattern = "(title|status|headline|message|text|label|name|description|stage|step|state)"
         let liveTexts = live.filter { ($0.value as? String).map(isReadable) ?? false }
         let fixedTexts = fixed.filter { ($0.value as? String).map(isReadable) ?? false }
-        let title = (liveTexts.first { matches($0.key, textPattern) } ?? liveTexts.first ?? fixedTexts.first { matches($0.key, textPattern) } ?? fixedTexts.first)?.value as? String
-        let subtitle = (fixedTexts + liveTexts).compactMap { $0.value as? String }.first { $0 != title }
+        func text(_ leaves: [(key: String, parent: String, value: Any)], _ pattern: String, not excluded: String? = nil) -> String? {
+            leaves.first { leaf in
+                guard matches(leaf.key, pattern) else { return false }
+                if let excluded, matches(leaf.key, excluded) { return false }
+                return true
+            }?.value as? String
+        }
 
-        var value: String?
+        // Most apps name their lines: a title ("Arriving in 5 min"), a
+        // subtitle ("Your order is being delivered!"), a short one for the
+        // compact view ("5min"). Those come first; otherwise the first lines.
+        let title = text(liveTexts, "title", not: "subtitle")
+            ?? text(liveTexts, "(headline|heading|message|status|stage|state)")
+            ?? liveTexts.first?.value as? String
+            ?? text(fixedTexts, "(title|name)") ?? fixedTexts.first?.value as? String
+        let subtitle = (text(liveTexts, "(subtitle|detail|body|description)")
+            ?? (liveTexts + fixedTexts).compactMap { $0.value as? String }.first { $0 != title })
+            .flatMap { $0 == title ? nil : $0 }
+        var value = text(liveTexts, "(compact|short|minimal)")
+
+        // Progress: a progress bar's own value beats anything else; then a
+        // stepped bar (each step's weight and how full it is); then any
+        // number that says it's a percentage.
         var progress: Double?
-        for leaf in live {
-            guard let n = number(leaf.value) else { continue }
-            if matches(leaf.key, "(progress|percent|fraction|completion)") {
-                progress = n > 1 ? n / 100 : n
-                value = "\(Int((progress ?? 0) * 100))%"
-                break
+        func fraction(_ n: Double) -> Double { min(1, max(0, n > 1 ? n / 100 : n)) }
+        if let bar = live.first(where: { matches($0.parent, "progress") && matches($0.key, "(fill|progress|percent|fraction|value)") }),
+           let n = number(bar.value) {
+            progress = fraction(n)
+        } else {
+            let weights = live.filter { matches($0.key, "^weight$") }.compactMap { number($0.value) }
+            let fills = live.filter { matches($0.parent, "step") && matches($0.key, "(fill|percent|progress)") }.compactMap { number($0.value) }
+            if weights.count == fills.count, !fills.isEmpty, weights.reduce(0, +) > 0 {
+                progress = zip(weights, fills).map { $0 * fraction($1) }.reduce(0, +) / weights.reduce(0, +)
+            } else if let leaf = live.first(where: { matches($0.key, "(progress|percent|fraction|completion)") }),
+                      let n = number(leaf.value) {
+                progress = fraction(n)
             }
-            if matches(leaf.key, "(eta|arrival|until|end|deadline|due)"), let d = date(n), d > Date(), d.timeIntervalSinceNow < 86_400 {
-                value = "\(max(1, Int(d.timeIntervalSinceNow / 60))) min"
-                break
-            }
-            if matches(leaf.key, "(minutes|mins|remaining)") {
-                value = "\(Int(n)) min"
-                break
+        }
+        if value == nil {
+            for leaf in live {
+                guard let n = number(leaf.value) else { continue }
+                if matches(leaf.key, "(eta|arrival|until|end|deadline|due)"), let d = date(n), d > Date(), d.timeIntervalSinceNow < 86_400 {
+                    value = "\(max(1, Int(d.timeIntervalSinceNow / 60))) min"
+                    break
+                }
+                if matches(leaf.key, "(minutes|mins|remaining)") {
+                    value = "\(Int(n)) min"
+                    break
+                }
             }
         }
         if value == nil {
             value = liveTexts.first { matches($0.key, "(eta|time|remaining|count|distance)") }?.value as? String
         }
-        return ExternalActivity.General(title: title ?? appName, subtitle: subtitle, value: value, progress: progress)
+        // Finished: a flag like "isComplete: true", or the app's own words
+        // ("Cleanup complete", "Delivered"), but not "being delivered".
+        let doneWords = "^(.*\\b)?(complete|completed|done|finished|delivered|all clean|cleaned)\\b"
+        let notYet = "\\b(being|be|will|soon|almost|about to|getting|on (its|the) way)\\b"
+        let flagged = live.contains { leaf in
+            // A real true/false, not a count like "completedSteps: 1".
+            guard matches(leaf.key, "^(is|has)?_?(complete|completed|finished|done|success)$"),
+                  let flag = leaf.value as? NSNumber, CFGetTypeID(flag) == CFBooleanGetTypeID() else { return false }
+            return flag.boolValue
+        }
+        let said = [title, subtitle].compactMap { $0 }.contains { matches($0, doneWords) && !matches($0, notYet) }
+        var general = ExternalActivity.General(title: title ?? appName, subtitle: subtitle, value: value, progress: progress)
+        general.finished = flagged || said
+        // A percentage the app didn't write itself is only shown for tasks
+        // (scans, exports); a delivery has its own words.
+        general.isTask = value == nil
+        return general
     }
 
     /// An update the app marked as an alert: any object under a key with
@@ -462,6 +511,15 @@ struct ExternalActivity: Identifiable, Equatable {
         var subtitle: String?
         var value: String?
         var progress: Double?
+        /// The app said it's finished (or progress reached 100%).
+        var finished = false
+        /// A task measured in percent (a scan, an export), rather than a
+        /// journey with its own words (a delivery, a ride).
+        var isTask = true
+
+        var isComplete: Bool { finished || (progress ?? 0) >= 0.999 }
+        /// A task with a percentage: a scan, a cleanup, a download, an export.
+        var showsProgressRing: Bool { progress != nil || finished }
     }
 
     struct Alert: Equatable {
@@ -473,6 +531,10 @@ struct ExternalActivity: Identifiable, Equatable {
     /// The app's icon when it's on this Mac.
     /// A Mac app's icon (already shaped); otherwise the iPhone's square one.
     @MainActor var iconIsShaped: Bool { AppLocator.url(for: bundleID) != nil }
+
+    /// The app's colour, taken from its icon (Glovo's yellow, Uber's
+    /// black falls back to green).
+    @MainActor var accent: Color { AppAccent.color(for: bundleID, icon: icon) }
 
     @MainActor var icon: NSImage? {
         if let url = AppLocator.url(for: bundleID) { return NSWorkspace.shared.icon(forFile: url.path) }
@@ -488,6 +550,11 @@ struct ExternalActivity: Identifiable, Equatable {
     }
 
     /// A match that's being played right now (a minute, fresh data).
+    var isMatch: Bool {
+        if case .match = display { return true }
+        return false
+    }
+
     var isLiveMatch: Bool {
         guard case .match(let m) = display else { return false }
         return m.minute != nil && !isStale
@@ -561,5 +628,44 @@ enum IPhoneAppIcons {
         }
         cache[bundleID] = image
         return image
+    }
+}
+
+/// An app's colour, from its icon: the average of its vivid pixels. Icons
+/// that are black, white or grey (no clear colour) get green, like the
+/// system's own Live Activities.
+@MainActor
+enum AppAccent {
+    private static var cache: [String: Color] = [:]
+
+    static func color(for bundleID: String, icon: NSImage?) -> Color {
+        if let color = cache[bundleID] { return color }
+        guard let icon, let color = vivid(icon) else { return .green }
+        cache[bundleID] = color
+        return color
+    }
+
+    private static func vivid(_ image: NSImage) -> Color? {
+        let side = 24
+        guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: side, pixelsHigh: side,
+                                         bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                                         colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) else { return nil }
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        image.draw(in: NSRect(x: 0, y: 0, width: side, height: side))
+        NSGraphicsContext.restoreGraphicsState()
+        var r = 0.0, g = 0.0, b = 0.0, total = 0.0
+        for x in 0..<side {
+            for y in 0..<side {
+                guard let c = rep.colorAt(x: x, y: y), c.alphaComponent > 0.5 else { continue }
+                let s = c.saturationComponent, v = c.brightnessComponent
+                guard s > 0.35, v > 0.35 else { continue }
+                let w = s * v
+                r += c.redComponent * w; g += c.greenComponent * w; b += c.blueComponent * w; total += w
+            }
+        }
+        // At least a tenth of the icon has to be colourful.
+        guard total > Double(side * side) * 0.06 else { return nil }
+        return Color(red: r / total, green: g / total, blue: b / total)
     }
 }

@@ -163,11 +163,11 @@ struct ShortcutCard: View {
             }
             Spacer(minLength: 6)
             Text(current.name)
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(size: fs(13), weight: .semibold))
                 .foregroundStyle(.white)
                 .lineLimit(2)
             Text(isMissing(current) ? "Not in Shortcuts" : "Shortcut")
-                .font(.system(size: 11, weight: .medium))
+                .font(.system(size: fs(11), weight: .medium))
                 .foregroundStyle(.white.opacity(0.85))
         }
         .padding(12)
@@ -188,7 +188,7 @@ struct ShortcutCard: View {
                     .frame(width: 36, height: 36)
                     .background(Circle().fill(Color.primary.opacity(0.1)))
                 Text("Choose a Shortcut")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: fs(12), weight: .semibold))
             }
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, minHeight: Self.height, maxHeight: Self.height)
@@ -270,7 +270,7 @@ private struct GlyphPicker: View {
                     ForEach(ShortcutButtons.symbolGroups, id: \.self) { group in
                         VStack(alignment: .leading, spacing: 4) {
                             Text(group.name.uppercased())
-                                .font(.system(size: 10, weight: .semibold))
+                                .font(.system(size: fs(10), weight: .semibold))
                                 .foregroundStyle(.secondary)
                             LazyVGrid(columns: Array(repeating: GridItem(.fixed(Self.cell), spacing: Self.spacing), count: 8),
                                       spacing: Self.spacing) {

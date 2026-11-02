@@ -6,6 +6,29 @@ final class NotchPanel: NSPanel {
     // Never take keyboard focus away from the app you're working in.
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
+
+    /// Liquid Glass draws its clear, "active" look only in the window that
+    /// looks key; anywhere else it turns frostier and flatter. The island
+    /// never takes keyboard focus, so instead it tells AppKit it has the key
+    /// window's appearance. These are AppKit's own private methods, replaced
+    /// at runtime only if this macOS has them, so a future version that
+    /// drops them simply gets the frostier glass.
+    @MainActor private static var keepsActiveGlass = false
+
+    /// Called before any island window is made.
+    @MainActor static func keepActiveGlass() {
+        guard !keepsActiveGlass else { return }
+        keepsActiveGlass = true
+        let yes: @convention(block) (AnyObject) -> Bool = { _ in true }
+        let imp = imp_implementationWithBlock(yes)
+        for name in ["hasKeyAppearance", "_hasKeyAppearance", "_hasActiveAppearance",
+                     "_hasActiveAppearanceIgnoringKeyFocus", "hasActiveAppearance"] {
+            let selector = NSSelectorFromString(name)
+            guard NSWindow.instancesRespond(to: selector) else { continue }
+            class_replaceMethod(NotchPanel.self, selector, imp, "B@:")
+        }
+        Diag.event("glass: active appearance forced")
+    }
 }
 
 /// Lets the first click on a button work even though the panel is never key.
@@ -207,6 +230,7 @@ final class NotchWindowController: NSObject {
     /// Borderless, transparent, above the menu bar, on every Space and over
     /// full-screen apps. Ignores the mouse until hovered.
     private static func makePanel<Content: View>(_ root: Content) -> NotchPanel {
+        NotchPanel.keepActiveGlass()
         let panel = NotchPanel(contentRect: NSRect(origin: .zero, size: NotchViewModel.canvas),
                                styleMask: [.borderless, .nonactivatingPanel],
                                backing: .buffered,
@@ -417,6 +441,8 @@ final class NotchWindowController: NSObject {
         vm.isRevealed = false
     }
 
+    private lazy var lockPlayer = LockScreenPlayer(vm: vm, media: media)
+
     private var spotlightCheckedAt = Date.distantPast
     private var spotlightOpen = false
 
@@ -541,6 +567,8 @@ final class NotchWindowController: NSObject {
             }
         }
         guard let screen, let panel = activePanel else { return }
+        // The lock screen's music card (and its full-screen artwork).
+        lockPlayer.update(on: screen, level: NSWindow.Level(rawValue: Self.normalLevel.rawValue - 1))
         // Every early return below hands the trackpad back if a banner had it.
         func leaveBanner() {
             guard overBanner else { return }
@@ -548,6 +576,7 @@ final class NotchWindowController: NSObject {
             if !vm.isExpanded { panel.ignoresMouseEvents = true }
         }
         // While locked, nothing opens: the history and controls stay private.
+        // (The music player has its own card on the lock screen.)
         guard vm.lock.state == .unlocked else {
             leaveBanner()
             if vm.isExpanded { setExpanded(false) }

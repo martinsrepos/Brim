@@ -165,6 +165,9 @@ struct IslandRootView: View {
         // Always dark: white text on black-tinted glass, in light mode too.
         .environment(\.colorScheme, .dark)
         .environment(\.glassTintOpacity, vm.glassTintOpacity)
+        // Text Size: font sizes come from a plain value, so a change redraws
+        // the island from scratch.
+        .id(vm.textScale)
         .frame(width: NotchViewModel.canvas.width, height: NotchViewModel.canvas.height, alignment: .top)
         .ignoresSafeArea()
         .animation(motion, value: mode)
@@ -228,7 +231,10 @@ struct IslandRootView: View {
             .animation(.spring(response: 0.5, dampingFraction: 0.8), value: paused)
             // In the panel, clicking the artwork opens the app that's playing.
             .contentShape(Rectangle())
-            .onTapGesture { if mode == .expanded { media.openSourceApp() } }
+            .onTapGesture {
+                guard mode == .expanded else { return }
+                media.openSourceApp()
+            }
             .offset(x: place.x, y: place.y)
             // Flying from the pill it's the same view and just moves; arriving
             // fresh (music was in the circle) it enters like the panel's content.
@@ -486,11 +492,17 @@ private struct GlassSurface<S: Shape>: ViewModifier {
         } else {
             #if compiler(>=6.2)
             if #available(macOS 26.0, *) {
+                // Apple's clear Liquid Glass (the least frosted kind), with a
+                // black veil inside it for Settings > Transparency. The veil
+                // stops just short of the edge and fades into it, so the
+                // glass's rim, where it bends and catches the light, stays
+                // visible all the way to solid black.
+                let darkness = scheme == .dark ? tintOpacity : 0
                 content
-                    .glassEffect(.regular, in: shape)
+                    .glassEffect(.clear, in: shape)
                     // The glass picks its light or dark rendering from here.
                     .environment(\.colorScheme, scheme)
-                    .overlay(shape.fill(darkening))
+                    .overlay(GlassVeil(shape: shape, darkness: darkness).allowsHitTesting(false))
             } else {
                 blurred(content)
             }
@@ -507,6 +519,33 @@ private struct GlassSurface<S: Shape>: ViewModifier {
             // A bright hairline on the edge reads as light catching the material.
             .overlay(shape.stroke(Color.white.opacity(scheme == .dark ? 0.18 : 0.4), lineWidth: 0.5))
             .clipShape(shape)
+    }
+}
+
+/// The black inside the glass. Clear glass needs some dimming behind white
+/// text (Apple says as much), so even "clear" keeps a light smoke; from
+/// there it deepens to solid black. While it's see-through, the veil stops
+/// short of the edge, so the rim keeps its lens; towards black the gap
+/// closes, and at solid black there's no frame at all, like Dynamic Island.
+private struct GlassVeil<S: Shape>: View {
+    let shape: S
+    /// Settings > Transparency: 0 clear, 1 solid black.
+    let darkness: Double
+
+    private var opacity: Double { 0.32 + 0.68 * darkness }
+    private var rim: Double { max(0, 1 - darkness * 1.25) }
+
+    var body: some View {
+        ZStack {
+            shape.fill(Color.black)
+            shape.stroke(Color.black, lineWidth: 3)
+                .blur(radius: 1)
+                .opacity(rim)
+                .blendMode(.destinationOut)
+        }
+        .compositingGroup()
+        .clipShape(shape)
+        .opacity(opacity)
     }
 }
 
@@ -694,9 +733,19 @@ struct BubbleView: View {
                 ZStack {
                     // A live match's ring breathes, softly: live, without a
                     // dot that could pass for the camera or recording light.
-                    LiveRing(progress: activity.progress ?? 1, tint: activity.isStale ? .secondary : .green,
+                    LiveRing(progress: activity.progress ?? 1,
+                             tint: activity.isStale ? .secondary : (activity.isLiveMatch || activity.isMatch ? .green : activity.accent),
                              breathing: activity.isLiveMatch)
-                    if let short = activity.short {
+                    if case .general(let general) = activity.display, !general.isComplete, !general.isTask || activity.short == nil {
+                        // The app's icon inside the ring of its progress.
+                        ExternalAppIcon(activity: activity, size: (h * 0.42).rounded())
+                    } else if case .general(let general) = activity.display, general.isComplete {
+                        // Finished: a tick in the full ring.
+                        Image(systemName: "checkmark")
+                            .font(.system(size: (h * 0.32).rounded(), weight: .bold))
+                            .foregroundStyle(Color.green)
+                            .transition(.scale(scale: 0.3).combined(with: .opacity))
+                    } else if let short = activity.short {
                         Text(short)
                             .font(font)
                             .foregroundStyle(activity.isStale ? AnyShapeStyle(.secondary) : AnyShapeStyle(Color.white))
@@ -1327,10 +1376,17 @@ struct CallActivityView: View {
                             .foregroundStyle(Color.white)
                     )
             } trailing: {
-                HStack(spacing: 4) {
+                HStack(spacing: 5) {
                     if isMuted {
                         Image(systemName: "mic.slash.fill")
                             .foregroundStyle(Color.red)
+                            .transition(.scale.combined(with: .opacity))
+                    } else {
+                        // A gentle waveform while the call is live (just a
+                        // sign of life: Brim doesn't listen to the mic). It
+                        // settles into dots when you mute.
+                        EqualizerView(color: .green, isPlaying: true)
+                            .frame(width: layout.equalizerSize * 0.8, height: layout.equalizerSize * 0.8)
                             .transition(.scale.combined(with: .opacity))
                     }
                     Text(callClock(context.date.timeIntervalSince(call.started)))
@@ -1367,18 +1423,20 @@ struct CallRow: View {
             TimelineView(.periodic(from: .now, by: 1)) { context in
                 VStack(alignment: .leading, spacing: 1) {
                     Text(call.appName)
-                        .font(.system(size: 11.5, weight: .semibold))
+                        .font(.system(size: fs(11.5), weight: .semibold))
                         .lineLimit(1)
                     Text("\(isMuted ? "Muted" : "Call") · \(callClock(context.date.timeIntervalSince(call.started)))")
-                        .font(.system(size: 10).monospacedDigit())
+                        .font(.system(size: fs(10)).monospacedDigit())
                         .foregroundStyle(isMuted ? AnyShapeStyle(Color.red) : AnyShapeStyle(Color.green))
                         .lineLimit(1)
                 }
             }
             Spacer(minLength: 4)
+            EqualizerView(color: isMuted ? .secondary : .green, isPlaying: !isMuted)
+                .frame(width: 16, height: 16)
             Button(action: onMute) {
                 Image(systemName: isMuted ? "mic.slash.fill" : "mic.fill")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: fs(12), weight: .semibold))
                     .contentTransition(.symbolEffect(.replace))
                     .foregroundStyle(isMuted ? Color.white : Color.primary)
                     .frame(width: 28, height: 24)
@@ -1463,17 +1521,17 @@ struct ReminderRow: View {
                 .frame(width: 3, height: 28)
             VStack(alignment: .leading, spacing: 1) {
                 Text(reminder.title)
-                    .font(.system(size: 11.5, weight: .semibold))
+                    .font(.system(size: fs(11.5), weight: .semibold))
                     .lineLimit(1)
                 Text("\(reminder.due.formatted(date: .omitted, time: .shortened)) · \(reminderWhen(minutes, short: false))")
-                    .font(.system(size: 10))
+                    .font(.system(size: fs(10)))
                     .foregroundStyle(minutes < -1 ? AnyShapeStyle(Color.red) : AnyShapeStyle(HierarchicalShapeStyle.secondary))
                     .lineLimit(1)
             }
             Spacer(minLength: 4)
             Button(action: onDone) {
                 Text("Done")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: fs(11), weight: .semibold))
                     .foregroundStyle(Color.white)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 4)
@@ -1753,34 +1811,34 @@ struct BannerView: View {
         VStack(spacing: 0) {
             Color.clear.frame(height: topInset)
             HStack(alignment: .center, spacing: 12) {
-                AlertIcon(alert: alert, size: 38)
+                AlertIcon(alert: alert, size: 38, animatesProducts: true)
                 VStack(alignment: .leading, spacing: 1) {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Text(isPrivate ? alert.appName ?? alert.title : alert.title)
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(.system(size: fs(13), weight: .semibold))
                             .lineLimit(1)
                         Spacer(minLength: 0)
                         if alert.battery == nil && alert.levelFraction == nil {
                             Text(alert.date.notchTimestamp)
-                                .font(.system(size: 11))
+                                .font(.system(size: fs(11)))
                                 .foregroundStyle(.tertiary)
                         }
                     }
                     if isPrivate {
                         Text("Notification")
-                            .font(.system(size: 12))
+                            .font(.system(size: fs(12)))
                             .foregroundStyle(.secondary)
                     }
                     if !isPrivate, let subtitle = alert.subtitle {
                         Text(subtitle)
-                            .font(.system(size: 12, weight: .medium))
+                            .font(.system(size: fs(12), weight: .medium))
                             .lineLimit(1)
                             // Changes in place fade: Muted to AirPods, Level 3 to Off, On to Muted.
                             .contentTransition(.opacity)
                     }
                     if !isPrivate, let message = alert.body {
                         Text(message)
-                            .font(.system(size: 12))
+                            .font(.system(size: fs(12)))
                             .foregroundStyle(.secondary)
                             .lineLimit(alert.subtitle == nil ? 2 : 1)
                     }
@@ -1802,6 +1860,18 @@ struct BannerView: View {
 struct AlertIcon: View {
     let alert: NotchAlert
     let size: CGFloat
+
+    /// Earbuds when they connect; the open case when it's opened next to
+    /// the Mac with them inside; the case on its own when only its battery
+    /// is reported (earbuds out, or the case charging by itself).
+    static func clipVariant(for alert: NotchAlert) -> DeviceAnimations.Variant {
+        let battery = alert.battery
+        let budsReported = battery?.left != nil || battery?.right != nil
+        if battery?.caseLevel != nil, !budsReported { return .closedCase }
+        return alert.subtitle == "Nearby" ? .openCase : .buds
+    }
+    /// The banner itself: Apple devices turn like a 3D model (not in lists).
+    var animatesProducts = false
 
     var body: some View {
         if let icon = alert.appIcon {
@@ -1829,6 +1899,20 @@ struct AlertIcon: View {
                     .foregroundStyle(alert.tint)
             }
             .frame(width: size, height: size)
+        } else if animatesProducts,
+                  alert.battery != nil || ["Connected", "Disconnected", "Nearby"].contains(alert.subtitle ?? ""),
+                  let clip = DeviceAnimations.clip(forDevice: alert.title, variant: Self.clipVariant(for: alert)) {
+            // AirPods and Beats turn on a turntable, like on iPhone.
+            Group {
+                if clip.isSheet {
+                    DeviceSheetView(url: clip.url)
+                } else {
+                    DeviceAnimationView(clip: clip)
+                }
+            }
+            .frame(width: size * 1.1, height: size * 1.1)
+            .frame(width: size, height: size)
+            .id(alert.id)
         } else {
             ZStack {
                 Circle().fill(alert.tint.opacity(0.18))
@@ -1917,12 +2001,12 @@ struct BatteryRing: View {
                     .stroke(color, style: StrokeStyle(lineWidth: 3, lineCap: .round))
                     .rotationEffect(.degrees(-90))
                 Image(systemName: charging ? "bolt.fill" : symbol)
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: fs(11), weight: .medium))
                     .foregroundStyle(charging ? color : Color.primary)
             }
             .frame(width: 28, height: 28)
             Text("\(level)%")
-                .font(.system(size: 9.5, weight: .semibold).monospacedDigit())
+                .font(.system(size: fs(9.5), weight: .semibold).monospacedDigit())
                 .foregroundStyle(.secondary)
         }
     }
@@ -1940,6 +2024,10 @@ struct ExpandedView: View {
     @Environment(NotchUIState.self) private var ui
 
     var body: some View {
+        panel
+    }
+
+    private var panel: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
                 .frame(height: layout.headerHeight)
@@ -2018,7 +2106,7 @@ struct ExpandedView: View {
                 }
                 .frame(height: NotchViewModel.toolRowHeight)
             }
-            .font(.system(size: 11, weight: .medium))
+            .font(.system(size: fs(11), weight: .medium))
             .foregroundStyle(.secondary)
         } else {
             HStack(spacing: 6) {
@@ -2038,7 +2126,7 @@ struct ExpandedView: View {
                 toolButtons
                 if ui.openMenu == nil { notificationsControls }
             }
-            .font(.system(size: 11, weight: .medium))
+            .font(.system(size: fs(11), weight: .medium))
             .foregroundStyle(.secondary)
         }
     }
@@ -2112,14 +2200,14 @@ struct ExpandedView: View {
                     HeaderMenuStrip {
                         HStack(spacing: 6) {
                             Image(systemName: "sun.min.fill")
-                                .font(.system(size: 10, weight: .semibold))
+                                .font(.system(size: fs(10), weight: .semibold))
                             Slider(value: Binding(get: { vm.brightness.level },
                                                   set: { vm.brightness.setLevel($0) }),
                                    in: 0...1)
                                 .controlSize(.small)
                                 .frame(width: 110)
                             Image(systemName: "sun.max.fill")
-                                .font(.system(size: 11, weight: .semibold))
+                                .font(.system(size: fs(11), weight: .semibold))
                         }
                         .padding(.horizontal, 8)
                         .frame(height: 22)
@@ -2262,15 +2350,15 @@ struct TimerRow: View {
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: item.kind.symbol)
-                .font(.system(size: 11, weight: .semibold))
+                .font(.system(size: fs(11), weight: .semibold))
                 .foregroundStyle(item.kind.tint)
             Text(item.isPaused ? "\(item.kind.title) Paused" : item.kind.title)
-                .font(.system(size: 11.5, weight: .semibold))
+                .font(.system(size: fs(11.5), weight: .semibold))
                 .lineLimit(1)
             Spacer(minLength: 4)
             TimelineView(.periodic(from: .now, by: 0.5)) { context in
                 Text(item.display(at: context.date))
-                    .font(.system(size: 12, weight: .semibold).monospacedDigit())
+                    .font(.system(size: fs(12), weight: .semibold).monospacedDigit())
                     .foregroundStyle(item.kind.tint.opacity(item.isPaused ? 0.55 : 1))
             }
             SmallIconButton(symbol: item.isPaused ? "play.fill" : "pause.fill") { timer.togglePause(item.id) }
@@ -2297,7 +2385,7 @@ struct HeaderMenuButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 12, weight: .semibold))
+                .font(.system(size: fs(12), weight: .semibold))
                 .foregroundStyle(tint.map { AnyShapeStyle($0) } ?? AnyShapeStyle(HierarchicalShapeStyle.primary))
                 .frame(width: 26, height: 26)
                 .background(Circle().fill(isOpen ? Color.primary.opacity(0.22)
@@ -2352,10 +2440,10 @@ struct EventCard: View {
                 .frame(width: 3, height: 28)
             VStack(alignment: .leading, spacing: 1) {
                 Text(event.title)
-                    .font(.system(size: 11.5, weight: .semibold))
+                    .font(.system(size: fs(11.5), weight: .semibold))
                     .lineLimit(1)
                 Text(when)
-                    .font(.system(size: 10))
+                    .font(.system(size: fs(10)))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
@@ -2365,7 +2453,7 @@ struct EventCard: View {
                     NSWorkspace.shared.open(link)
                 } label: {
                     Text("Join")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: fs(11), weight: .semibold))
                         .foregroundStyle(Color.white)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 4)
@@ -2387,19 +2475,19 @@ struct DownloadRow: View {
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: download.isAirDrop ? DownloadMonitor.Active.airDropSymbol : "arrow.down.circle.fill")
-                .font(.system(size: 15))
+                .font(.system(size: fs(15)))
                 .foregroundStyle(Color.blue)
                 .frame(width: 18)
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
                     Text(download.title)
-                        .font(.system(size: 11.5, weight: .semibold))
+                        .font(.system(size: fs(11.5), weight: .semibold))
                         .lineLimit(1)
                         .truncationMode(.middle)
                     Spacer(minLength: 4)
                     if let fraction = download.fraction {
                         Text("\(Int(fraction * 100))%")
-                            .font(.system(size: 10, weight: .medium).monospacedDigit())
+                            .font(.system(size: fs(10), weight: .medium).monospacedDigit())
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -2429,7 +2517,7 @@ struct SmallIconButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 9.5, weight: .bold))
+                .font(.system(size: fs(9.5), weight: .bold))
                 .frame(width: 20, height: 20)
                 .background(Circle().fill(Color.primary.opacity(0.1)))
                 .contentShape(Circle())
@@ -2452,7 +2540,7 @@ struct PresetChip: View {
     var body: some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 11.5, weight: .semibold))
+                .font(.system(size: fs(11.5), weight: .semibold))
                 .foregroundStyle(tint.map { AnyShapeStyle($0) } ?? AnyShapeStyle(HierarchicalShapeStyle.primary))
                 .padding(.horizontal, 10)
                 .frame(height: 24)
@@ -2486,11 +2574,11 @@ struct CustomTimerField: View {
                 colon
                 part(2)
             }
-            .font(.system(size: 13, weight: .semibold).monospacedDigit())
+            .font(.system(size: fs(13), weight: .semibold).monospacedDigit())
             .padding(.horizontal, 4)
             Button(action: cancel) {
                 Image(systemName: "xmark")
-                    .font(.system(size: 9.5, weight: .bold))
+                    .font(.system(size: fs(9.5), weight: .bold))
                     .frame(width: 24, height: 24)
                     .background(Circle().fill(Color.primary.opacity(0.12)))
                     .contentShape(Circle())
@@ -2499,7 +2587,7 @@ struct CustomTimerField: View {
             .accessibilityLabel("Cancel")
             Button { start(totalSeconds) } label: {
                 Image(systemName: "checkmark")
-                    .font(.system(size: 10.5, weight: .bold))
+                    .font(.system(size: fs(10.5), weight: .bold))
                     .foregroundStyle(Color.black)
                     .frame(width: 24, height: 24)
                     .background(Circle().fill(Color.orange))
@@ -2534,7 +2622,7 @@ struct CustomTimerField: View {
             .overlay(alignment: .top) {
                 if hovering {
                     Image(systemName: "chevron.compact.up")
-                        .font(.system(size: 7, weight: .bold))
+                        .font(.system(size: fs(7), weight: .bold))
                         .foregroundStyle(Color.orange.opacity(0.7))
                         .offset(y: -6)
                         .transition(.opacity)
@@ -2543,7 +2631,7 @@ struct CustomTimerField: View {
             .overlay(alignment: .bottom) {
                 if hovering {
                     Image(systemName: "chevron.compact.down")
-                        .font(.system(size: 7, weight: .bold))
+                        .font(.system(size: fs(7), weight: .bold))
                         .foregroundStyle(Color.orange.opacity(0.7))
                         .offset(y: 6)
                         .transition(.opacity)
@@ -2623,7 +2711,7 @@ struct IconChip: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 11.5, weight: .semibold))
+                .font(.system(size: fs(11.5), weight: .semibold))
                 .foregroundStyle(.primary)  // full strength, like the text options
                 .frame(width: 30, height: 24)
                 .background(Capsule().fill(Color.primary.opacity(0.1)))
@@ -2636,6 +2724,8 @@ struct IconChip: View {
 
 struct PlayerView: View {
     let media: MediaController
+    /// Clicking the song opens its app (not on the lock screen).
+    var opensApp = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.layoutDirection) private var layoutDirection
 
@@ -2650,10 +2740,10 @@ struct PlayerView: View {
                     ZStack(alignment: .leading) {
                         VStack(alignment: .leading, spacing: 1) {
                             Text(track.title)
-                                .font(.system(size: 13, weight: .semibold))
+                                .font(.system(size: fs(13), weight: .semibold))
                                 .lineLimit(1)
                             Text(track.artist)
-                                .font(.system(size: 11.5))
+                                .font(.system(size: fs(11.5)))
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
                         }
@@ -2666,13 +2756,13 @@ struct PlayerView: View {
                     .animation(reduceMotion ? .easeOut(duration: 0.2) : .spring(response: 0.45, dampingFraction: 0.88),
                                value: media.trackKey)
                     .contentShape(Rectangle())
-                    .onTapGesture { media.openSourceApp() }
+                    .onTapGesture { if opensApp { media.openSourceApp() } }
                     .overlay(alignment: .topTrailing) {
                         // Apple Music's favourite, like the star in its own player.
                         if media.canLove {
                             Button { media.toggleLoved() } label: {
                                 Image(systemName: media.isLoved == true ? "star.fill" : "star")
-                                    .font(.system(size: 12, weight: .semibold))
+                                    .font(.system(size: fs(12), weight: .semibold))
                                     .foregroundStyle(media.isLoved == true ? AnyShapeStyle(Color.pink)
                                                                            : AnyShapeStyle(HierarchicalShapeStyle.secondary))
                                     .contentTransition(.symbolEffect(.replace))
@@ -2718,7 +2808,7 @@ struct ModeButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 11, weight: .semibold))
+                .font(.system(size: fs(11), weight: .semibold))
                 .foregroundStyle(isOn ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(HierarchicalShapeStyle.secondary))
                 .contentTransition(.symbolEffect(.replace))
                 .frame(width: 26, height: 24)
@@ -2749,22 +2839,22 @@ struct MirrorView: View {
             case .denied:
                 VStack(spacing: 6) {
                     Image(systemName: "video.slash")
-                        .font(.system(size: 18))
+                        .font(.system(size: fs(18)))
                         .foregroundStyle(.secondary)
                     Text("Brim can't use the camera")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: fs(11), weight: .semibold))
                     Button("Open Camera Settings") {
                         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera") {
                             NSWorkspace.shared.open(url)
                         }
                     }
                     .buttonStyle(PressStyle())
-                    .font(.system(size: 10.5, weight: .medium))
+                    .font(.system(size: fs(10.5), weight: .medium))
                     .foregroundStyle(Color.accentColor)
                 }
             case .noCamera:
                 Text("No camera found")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: fs(11), weight: .medium))
                     .foregroundStyle(.secondary)
             case .unknown, .allowed:
                 CameraPreview(session: camera.session)
@@ -2784,9 +2874,9 @@ struct MirrorView: View {
                 } label: {
                     HStack(spacing: 5) {
                         Image(systemName: "arrow.triangle.2.circlepath.camera")
-                            .font(.system(size: 9, weight: .bold))
+                            .font(.system(size: fs(9), weight: .bold))
                         Text(camera.currentName ?? "Camera")
-                            .font(.system(size: 9.5, weight: .semibold))
+                            .font(.system(size: fs(9.5), weight: .semibold))
                             .lineLimit(1)
                     }
                     .foregroundStyle(Color.white)
@@ -2807,7 +2897,7 @@ struct MirrorView: View {
     private func overlayButton(_ symbol: String, label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 8, weight: .bold))
+                .font(.system(size: fs(8), weight: .bold))
                 .foregroundStyle(Color.white)
                 .frame(width: 20, height: 20)
                 .background(Circle().fill(Color.black.opacity(0.45)))
@@ -2827,7 +2917,7 @@ struct EmptyPlayerView: View {
                 media.launch(app)
             } label: {
                 Text("Open \(app.rawValue)")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: fs(11), weight: .medium))
                     .lineLimit(1)
                     .fixedSize()
                     .padding(.horizontal, 10)
@@ -2844,7 +2934,7 @@ struct EmptyPlayerView: View {
             ArtworkView(image: nil, size: 84, corner: 12)
             VStack(alignment: .leading, spacing: 8) {
                 Text("Nothing playing")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: fs(13), weight: .semibold))
                 // Side by side when they fit, stacked in a narrow panel.
                 ViewThatFits(in: .horizontal) {
                     HStack(spacing: 8) { openButtons }
@@ -2904,7 +2994,7 @@ struct ProgressBar: View {
                     Spacer()
                     Text("-" + timeString(duration - fraction * duration))
                 }
-                .font(.system(size: 9.5, weight: .medium).monospacedDigit())
+                .font(.system(size: fs(9.5), weight: .medium).monospacedDigit())
                 .foregroundStyle(.tertiary)
             }
         }
@@ -2995,9 +3085,9 @@ struct NotificationListView: View {
             ViewThatFits(in: .vertical) {
                 VStack(spacing: 6) {
                     Image(systemName: "bell.slash")
-                        .font(.system(size: 18))
+                        .font(.system(size: fs(18)))
                     Text("No Notifications")
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.system(size: fs(11), weight: .medium))
                 }
                 .padding(.vertical, 4)
                 Color.clear.frame(height: 0)
@@ -3137,17 +3227,17 @@ struct StackHeader: View {
     var body: some View {
         HStack(spacing: 8) {
             Text(title)
-                .font(.system(size: 11, weight: .semibold))
+                .font(.system(size: fs(11), weight: .semibold))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
             Spacer(minLength: 4)
             Button("Show Less", action: collapse)
                 .buttonStyle(.plain)
-                .font(.system(size: 10, weight: .medium))
+                .font(.system(size: fs(10), weight: .medium))
                 .foregroundStyle(.secondary)
             Button(action: clear) {
                 Image(systemName: "xmark")
-                    .font(.system(size: 7.5, weight: .bold))
+                    .font(.system(size: fs(7.5), weight: .bold))
                     .foregroundStyle(.secondary)
                     .frame(width: 15, height: 15)
                     .background(Circle().fill(Color.primary.opacity(0.1)))
@@ -3191,7 +3281,7 @@ struct NotificationRow: View {
             if hovering && offset == 0 {
                 Button(action: clear) {
                     Image(systemName: "xmark")
-                        .font(.system(size: 7.5, weight: .bold))
+                        .font(.system(size: fs(7.5), weight: .bold))
                         .foregroundStyle(.secondary)
                         .frame(width: 15, height: 15)
                         .background(Circle().fill(.regularMaterial))
@@ -3223,25 +3313,25 @@ struct NotificationRow: View {
                 VStack(alignment: .leading, spacing: 0) {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Text(alert.title)
-                            .font(.system(size: 11.5, weight: .semibold))
+                            .font(.system(size: fs(11.5), weight: .semibold))
                             .lineLimit(1)
                         Spacer(minLength: 0)
                         Text(alert.date.notchTimestamp)
-                            .font(.system(size: 9.5))
+                            .font(.system(size: fs(9.5)))
                             .foregroundStyle(.tertiary)
                     }
                     if alert.detail != nil || moreCount != nil {
                         HStack(spacing: 6) {
                             if let detail = alert.detail {
                                 Text(detail)
-                                    .font(.system(size: 10.5))
+                                    .font(.system(size: fs(10.5)))
                                     .foregroundStyle(.secondary)
                                     .lineLimit(1)
                             }
                             Spacer(minLength: 0)
                             if let moreCount {
                                 Text("\(moreCount) more")
-                                    .font(.system(size: 9.5, weight: .medium))
+                                    .font(.system(size: fs(9.5), weight: .medium))
                                     .foregroundStyle(.tertiary)
                                     .transition(.opacity)
                             }
@@ -3373,6 +3463,21 @@ struct ExternalActivityView: View {
                 if case .match(let match) = activity.display, let minute = match.minute {
                     // A live match: the minute's tick blinks, like a scoreboard.
                     LiveMinute(minute: minute, live: !activity.isStale)
+                } else if case .general(let general) = activity.display, !general.isTask {
+                    // A delivery, a ride: the app's own short words ("5min")
+                    // in its colour, with the order's progress as a ring.
+                    if let value = general.value {
+                        Text(value)
+                            .foregroundStyle(activity.isStale ? AnyShapeStyle(.secondary) : AnyShapeStyle(activity.accent))
+                            .contentTransition(.numericText())
+                    }
+                    if general.progress != nil || general.isComplete {
+                        TaskProgress(general: general, size: layout.titleSize * 1.15, showsPercent: false,
+                                     tint: activity.accent, showsNumber: false)
+                    }
+                } else if case .general(let general) = activity.display, general.showsProgressRing {
+                    // A scan, a cleanup, a download: a ring that fills, then a tick.
+                    TaskProgress(general: general, size: layout.titleSize * 1.15, showsPercent: true)
                 } else if let value = activity.value {
                     Text(value)
                         .foregroundStyle(activity.isStale ? AnyShapeStyle(.secondary) : AnyShapeStyle(Color.green))
@@ -3422,7 +3527,7 @@ struct ExternalActivityCard: View {
             if hovering {
                 Button(action: onDismiss) {
                     Image(systemName: "xmark")
-                        .font(.system(size: 7.5, weight: .bold))
+                        .font(.system(size: fs(7.5), weight: .bold))
                         .foregroundStyle(.secondary)
                         .frame(width: 15, height: 15)
                         .background(Circle().fill(.regularMaterial))
@@ -3453,17 +3558,17 @@ struct ExternalActivityCard: View {
                 // The icon says which app; the line is the competition, shrunk
                 // a little rather than cut when it's long.
                 Text(match.competition ?? activity.appName)
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.system(size: fs(10), weight: .semibold))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.75)
                 Spacer(minLength: 4)
                 if activity.isStale {
-                    Image(systemName: "clock").font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
+                    Image(systemName: "clock").font(.system(size: fs(9), weight: .semibold)).foregroundStyle(.secondary)
                 }
                 if let minute = match.minute {
                     LiveMinute(minute: minute, live: !activity.isStale)
-                        .font(.system(size: 10.5, weight: .bold).monospacedDigit())
+                        .font(.system(size: fs(10.5), weight: .bold).monospacedDigit())
                 }
             }
             team(match.home, match.homeScore, reds: match.homeRed)
@@ -3474,7 +3579,7 @@ struct ExternalActivityCard: View {
     private func team(_ name: String, _ score: Int, reds: Int) -> some View {
         HStack(spacing: 4) {
             Text(name)
-                .font(.system(size: 11.5, weight: .semibold))
+                .font(.system(size: fs(11.5), weight: .semibold))
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
             ForEach(0..<min(reds, 3), id: \.self) { _ in
@@ -3484,34 +3589,50 @@ struct ExternalActivityCard: View {
             }
             Spacer(minLength: 4)
             Text("\(score)")
-                .font(.system(size: 13, weight: .heavy).monospacedDigit())
+                .font(.system(size: fs(13), weight: .heavy).monospacedDigit())
                 .contentTransition(.numericText())
         }
     }
 
+    /// Like the app's own Live Activity on iPhone: the main line in the
+    /// app's colour, what's happening under it, and the progress bar.
     private func generalRow(_ general: ExternalActivity.General) -> some View {
-        HStack(spacing: 8) {
-            ExternalAppIcon(activity: activity, size: 22)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(general.title)
-                    .font(.system(size: 11.5, weight: .semibold))
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.85)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text(general.subtitle ?? activity.appName)
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(alignment: .top, spacing: 8) {
+                ExternalAppIcon(activity: activity, size: 22)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(general.title)
+                        .font(.system(size: fs(12), weight: .bold))
+                        .foregroundStyle(activity.isStale || general.isTask ? AnyShapeStyle(.primary) : AnyShapeStyle(activity.accent))
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.85)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(general.subtitle ?? activity.appName)
+                        .font(.system(size: fs(10.5)))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.85)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 4)
+                if activity.isStale {
+                    Image(systemName: "clock").font(.system(size: fs(10), weight: .semibold)).foregroundStyle(.secondary)
+                }
+                if general.isTask, general.showsProgressRing {
+                    TaskProgress(general: general, size: 22, showsPercent: false)
+                } else if general.isComplete {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: fs(16), weight: .semibold))
+                        .foregroundStyle(activity.accent)
+                } else if let value = general.value {
+                    Text(value)
+                        .font(.system(size: fs(12), weight: .semibold).monospacedDigit())
+                        .foregroundStyle(general.isTask ? minuteColor : AnyShapeStyle(activity.accent))
+                }
             }
-            Spacer(minLength: 4)
-            if activity.isStale {
-                Image(systemName: "clock").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
-            }
-            if let value = general.value {
-                Text(value)
-                    .font(.system(size: 12, weight: .semibold).monospacedDigit())
-                    .foregroundStyle(minuteColor)
+            if !general.isTask, let progress = general.progress {
+                ActivityProgressBar(fraction: general.isComplete ? 1 : progress,
+                                    tint: activity.isStale ? .secondary : activity.accent)
             }
         }
     }
@@ -3542,6 +3663,79 @@ struct LiveMinute: View {
 }
 
 /// The circle's ring for another app's activity; a live match's breathes.
+/// An order's or a ride's progress, as the app draws it on iPhone: a
+/// rounded bar in its colour.
+struct ActivityProgressBar: View {
+    let fraction: Double
+    let tint: Color
+    var height: CGFloat = 5
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.primary.opacity(0.18))
+                Capsule().fill(tint)
+                    .frame(width: max(height, geo.size.width * min(1, max(0, fraction))))
+            }
+        }
+        .frame(height: height)
+        .animation(.easeOut(duration: 0.5), value: fraction)
+        .accessibilityElement()
+        .accessibilityLabel("\(Int((fraction * 100).rounded())) percent")
+    }
+}
+
+/// A task's progress, the way the system draws it: a thin ring that fills
+/// clockwise with the percentage beside it (or inside, in the panel), and a
+/// check mark that pops in when it's done.
+struct TaskProgress: View {
+    let general: ExternalActivity.General
+    let size: CGFloat
+    /// Beside the ring (the pill); otherwise inside it (the panel).
+    let showsPercent: Bool
+    var tint: Color = .green
+    /// The number inside the ring (tasks); a delivery's ring is just a ring.
+    var showsNumber = true
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var fraction: Double { general.isComplete ? 1 : min(1, max(0, general.progress ?? 0)) }
+    private var percent: String { "\(Int((fraction * 100).rounded(.down)))%" }
+
+    var body: some View {
+        HStack(spacing: 5) {
+            ZStack {
+                Circle().stroke(Color.primary.opacity(0.15), lineWidth: size * 0.12)
+                Circle()
+                    .trim(from: 0, to: fraction)
+                    .stroke(tint, style: StrokeStyle(lineWidth: size * 0.12, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                if general.isComplete {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: size * 0.48, weight: .bold))
+                        .foregroundStyle(tint)
+                        .transition(.scale(scale: 0.3).combined(with: .opacity))
+                } else if !showsPercent, showsNumber {
+                    Text("\(Int((fraction * 100).rounded(.down)))")
+                        .font(.system(size: size * 0.36, weight: .semibold).monospacedDigit())
+                        .minimumScaleFactor(0.6)
+                        .contentTransition(.numericText())
+                }
+            }
+            .frame(width: size, height: size)
+            if showsPercent, !general.isComplete {
+                Text(percent)
+                    .foregroundStyle(tint)
+                    .monospacedDigit()
+                    .contentTransition(.numericText())
+            }
+        }
+        .animation(reduceMotion ? .easeOut(duration: 0.2) : .spring(response: 0.5, dampingFraction: 0.7), value: general.isComplete)
+        .animation(.easeOut(duration: 0.4), value: fraction)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(general.isComplete ? "Done" : "\(percent) done")
+    }
+}
+
 struct LiveRing: View {
     let progress: Double
     let tint: Color

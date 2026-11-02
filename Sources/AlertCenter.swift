@@ -414,6 +414,15 @@ final class BluetoothMonitor: NSObject, CBCentralManagerDelegate {
                                                          selector: #selector(connected(_:device:)))
         // Listens for AirPods announcing themselves when their case opens.
         central = CBCentralManager(delegate: self, queue: nil)
+        // Gets the paired headphones' 3D turntables ready, a little after
+        // launch, so their banners start turning straight away.
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(8))
+            let paired = IOBluetoothDevice.pairedDevices() as? [IOBluetoothDevice] ?? []
+            if let name = paired.compactMap(\.name).first(where: { Self.isAirPods($0) || $0.lowercased().contains("beats") }) {
+                DeviceAnimations.preload(forDevice: name)
+            }
+        }
     }
 
     // MARK: Connect / disconnect
@@ -552,8 +561,31 @@ final class BluetoothMonitor: NSObject, CBCentralManagerDelegate {
     }
 
     private static func airPodsAlert(name: String, battery: DeviceBattery?, status: String) -> NotchAlert {
-        NotchAlert(symbol: symbol(for: name), tint: .white, title: name, subtitle: status,
-                   duration: 5, battery: battery)
+        // Opened nearby: it's the case you're holding, so the case turns in
+        // the banner.
+        let device = symbol(for: name)
+        let shown = status == "Nearby" ? caseSymbol(for: name) ?? device : device
+        return NotchAlert(symbol: shown, tint: .white, title: name, subtitle: status,
+                          duration: 5, battery: battery)
+    }
+
+    /// The three AirPods banners, for trying them out (the menu bar menu,
+    /// with Option held): connected, the case opened nearby, the case alone.
+    static func testAlerts() -> [NotchAlert] {
+        let name = pairedAirPodsName() ?? "AirPods Pro"
+        let both = DeviceBattery(left: 90, right: 85, caseLevel: 70)
+        return [airPodsAlert(name: name, battery: both, status: "Connected"),
+                airPodsAlert(name: name, battery: both, status: "Nearby"),
+                airPodsAlert(name: name, battery: DeviceBattery(caseLevel: 70, caseCharging: true), status: "Case")]
+    }
+
+    /// The charging case that goes with these AirPods (none for AirPods Max).
+    private static func caseSymbol(for name: String) -> String? {
+        let n = name.lowercased()
+        if n.contains("max") { return nil }
+        if n.contains("pro") { return available(["airpodspro.chargingcase.wireless.fill", "airpodspro.chargingcase.wireless"]) }
+        if n.contains("4") { return available(["airpods.gen4.chargingcase.wireless.fill", "airpods.chargingcase.wireless.fill", "airpods.chargingcase.fill"]) }
+        return available(["airpods.chargingcase.wireless.fill", "airpods.chargingcase.fill"])
     }
 
     // MARK: Case opened nearby (proximity advertisements)

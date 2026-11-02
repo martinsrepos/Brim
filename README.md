@@ -32,7 +32,7 @@ https://github.com/user-attachments/assets/921c8aef-708e-42f4-abbc-ddd7e082addc
 - Notifications from every app, with the real app icon
 - Stacks in the panel, swipe or flick to clear
 - Respect Focus
-- Private on the lock screen
+- Private on the lock screen, with the music player, and artwork that fills the screen
 - Your own notifications from scripts and Shortcuts
 
 **Music**
@@ -43,10 +43,11 @@ https://github.com/user-attachments/assets/921c8aef-708e-42f4-abbc-ddd7e082addc
 
 **Live activities**
 - Live Activities from your iPhone and other apps (macOS 27), with match scores that update live
+- Deliveries, rides and downloads with their progress, like on iPhone
 - Two things at once, like iPhone
 - Timers, stopwatches and Focus rounds
 - Upcoming meetings with Join
-- Calls with Mute
+- Calls with Mute and a live waveform
 - Reminders with Done, kept in view until you tick them off
 - Downloads and AirDrop
 
@@ -59,7 +60,8 @@ https://github.com/user-attachments/assets/921c8aef-708e-42f4-abbc-ddd7e082addc
 - Bluetooth accessories connecting
 
 **Devices**
-- AirPods battery, like iPhone
+- AirPods battery, like iPhone, with AirPods Pro, AirPods 4 and AirPods Max turning in 3D
+- Text Size, with the pill and the panel growing to fit
 - Low battery for your keyboard, mouse and trackpad
 - Logitech battery
 
@@ -124,6 +126,6 @@ xcode-select --install
 - [The full guide](docs/GUIDE.md): every feature and setting, permissions, troubleshooting, how it works, limitations
 - [Roadmap](docs/ROADMAP.md): what's coming next
 - [Security policy](SECURITY.md)
-- Credits: weather by Open-Meteo and MET Norway (CC BY 4.0); the Now Playing helper is mediaremote-adapter (BSD 3-Clause); the lock screen layer follows SkyLightWindow (MIT).
+- Credits: weather by Open-Meteo and MET Norway (CC BY 4.0); the Now Playing helper is mediaremote-adapter (BSD 3-Clause); the lock screen layer follows SkyLightWindow (MIT); the AirPods Pro animations are rendered from the [AirPods Pro 3 model by Apple User](https://sketchfab.com/3d-models/airpods-pro-3-2209c17723a54331985cc080eda35266) on Sketchfab (Free Standard licence), the AirPods 4 ones from the [AirPods 4 model](https://sketchfab.com/3d-models/airpods-4-e44730974131402eb496352cab19c82e) on Sketchfab, and the AirPods Max ones from iMeshh's [AirPod Max Style Headphones](https://www.cgtrader.com/free-3d-models/electronics/audio/headphone-0a071c30-fac9-42a5-b49f-5a144e77f003) on CGTrader. Brim includes only the rendered animations, never the models themselves.
 
 MIT licence. Brim isn't affiliated with Apple.

@@ -85,8 +85,26 @@ final class NotchViewModel {
     var isPreviewingExpanded = false
     /// The compact pill on screens without a notch.
     private(set) var pillSize: CGSize
-    /// The expanded panel (whole island size on screens without a notch).
-    private(set) var panelSize: CGSize
+    /// The expanded panel as set in Settings (before Text Size).
+    private(set) var basePanelSize: CGSize
+    /// The expanded panel as drawn: bigger text, a bigger panel (as wide as
+    /// the window allows).
+    var panelSize: CGSize {
+        CGSize(width: min((basePanelSize.width * textScale).rounded(), Self.canvas.width - 40),
+               height: (basePanelSize.height * textScale).rounded())
+    }
+    /// Settings > Appearance > Text Size: every text in the island, the pill
+    /// and the panel grow with it (a real notch keeps its height).
+    private(set) var textScale: CGFloat
+    static let textScales: [(title: String, value: CGFloat)] = [
+        ("Small", 0.9), ("Default", 1), ("Large", 1.12), ("Extra Large", 1.25),
+    ]
+    /// The pill as drawn on screens without a notch: Settings' size, scaled
+    /// with the text.
+    var scaledPillSize: CGSize {
+        CGSize(width: (pillSize.width * textScale).rounded(),
+               height: (pillSize.height * textScale).rounded().clamped(to: Self.pillHeightRange.lowerBound...70))
+    }
     /// Gap between the top of the screen and the island (Settings).
     private(set) var islandOffset: CGFloat
     /// How much wider than the default the notch's wings are (Settings).
@@ -120,6 +138,10 @@ final class NotchViewModel {
     /// 1 = clear glass. Anything in between is smoky black glass.
     private(set) var glassTransparency: Double
     private(set) var showOnLockScreen: Bool
+    /// While music is loaded, a player card on the lock screen, like iPhone's.
+    private(set) var showsLockScreenPlayer: Bool
+    /// Live Activities (deliveries, matches) under the clock while locked.
+    private(set) var showsLockScreenActivities: Bool
 
     let media: MediaController
     let alerts: AlertCenter
@@ -218,6 +240,8 @@ final class NotchViewModel {
         self.timerSound = defaults.string(forKey: "timerSound") ?? "Glass"
         self.notificationSound = defaults.string(forKey: "notificationSound") ?? ""
         self.showOnLockScreen = defaults.object(forKey: "showOnLockScreen") as? Bool ?? true
+        self.showsLockScreenPlayer = defaults.object(forKey: "showsLockScreenPlayer") as? Bool ?? true
+        self.showsLockScreenActivities = defaults.object(forKey: "showsLockScreenActivities") as? Bool ?? true
         let offset = defaults.object(forKey: "islandOffset") as? Double
         self.islandOffset = CGFloat(offset ?? Double(Self.defaultIslandOffset)).clamped(to: Self.islandOffsetRange)
         self.wingExtra = CGFloat(UserDefaults.standard.double(forKey: "notchWingExtra")).clamped(to: Self.wingExtraRange)
@@ -225,7 +249,10 @@ final class NotchViewModel {
         let panel = Self.loadSize("panel", default: Self.defaultPanel)
         self.pillSize = CGSize(width: pill.width.clamped(to: Self.pillWidthRange),
                                height: pill.height.clamped(to: Self.pillHeightRange))
-        self.panelSize = CGSize(width: panel.width.clamped(to: Self.panelWidthRange),
+        let scale = CGFloat(defaults.object(forKey: "textScale") as? Double ?? 1)
+        self.textScale = scale
+        TextScale.factor = scale
+        self.basePanelSize = CGSize(width: panel.width.clamped(to: Self.panelWidthRange),
                                 height: panel.height.clamped(to: Self.panelHeightRange))
         prompter.library = scripts
     }
@@ -306,13 +333,20 @@ final class NotchViewModel {
         pillSize = CGSize(width: size.width.clamped(to: Self.pillWidthRange),
                           height: size.height.clamped(to: Self.pillHeightRange))
         Self.saveSize(pillSize, as: "pill")
-        if !(hasNotch && !isIsland) { closedSize = pillSize }
+        if !(hasNotch && !isIsland) { closedSize = scaledPillSize }
+    }
+
+    func setTextScale(_ scale: CGFloat) {
+        textScale = scale
+        TextScale.factor = scale
+        UserDefaults.standard.set(Double(scale), forKey: "textScale")
+        if !(hasNotch && !isIsland) { closedSize = scaledPillSize }
     }
 
     func setPanelSize(_ size: CGSize) {
-        panelSize = CGSize(width: size.width.clamped(to: Self.panelWidthRange),
-                           height: size.height.clamped(to: Self.panelHeightRange))
-        Self.saveSize(panelSize, as: "panel")
+        basePanelSize = CGSize(width: size.width.clamped(to: Self.panelWidthRange),
+                               height: size.height.clamped(to: Self.panelHeightRange))
+        Self.saveSize(basePanelSize, as: "panel")
     }
 
     func setIslandOffset(_ offset: CGFloat) {
@@ -523,6 +557,16 @@ final class NotchViewModel {
         UserDefaults.standard.set(show, forKey: "showOnLockScreen")
     }
 
+    func setShowsLockScreenActivities(_ show: Bool) {
+        showsLockScreenActivities = show
+        UserDefaults.standard.set(show, forKey: "showsLockScreenActivities")
+    }
+
+    func setShowsLockScreenPlayer(_ show: Bool) {
+        showsLockScreenPlayer = show
+        UserDefaults.standard.set(show, forKey: "showsLockScreenPlayer")
+    }
+
     // MARK: - State
 
     /// The resting state when nothing is happening on top. Priority, most
@@ -711,13 +755,15 @@ final class NotchViewModel {
     /// Every spacing in the expanded panel. Concentric: artwork corner (12) +
     /// margin (20) = panel corner (32), so the artwork and the panel edge curve
     /// in parallel and the header clears the corners.
-    /// The notifications column grows a little with the panel, so the player
-    /// keeps most of the extra room but neither side gets squeezed.
     /// The row of buttons under the camera strip on a real notch.
     static let toolRowHeight: CGFloat = 26
 
+    /// The notifications get a little more than half of the panel (they
+    /// have more to say), the player the rest, never less than it needs.
     var activityColumnWidth: CGFloat {
-        (panelSize.width * 0.36).clamped(to: 190...240).rounded()
+        let inner = panelSize.width - panelLayout.margin * 2 - 33
+        let player = 280 * textScale
+        return min(max(inner * 0.53, 200 * textScale), inner - player).rounded()
     }
 
     var panelLayout: PanelLayout {
@@ -747,13 +793,14 @@ final class NotchViewModel {
             artworkCorner: (artwork * 0.28).rounded(),
             equalizerSize: equalizer,
             trailingInset: isIsland ? ((h - equalizer) / 2).rounded() : 8,
-            titleSize: min(15, max(12, (h * 0.4).rounded()))
+            // On a real notch the pill can't grow taller, so only the text does.
+            titleSize: min(15, max(12, (h * 0.4).rounded())) * (isIsland || !hasNotch ? 1 : textScale)
         )
     }
 
     /// On a notch, the camera sits in the middle, so content goes in "wings" this
     /// wide on each side (Settings > Appearance > Notch Wings).
-    var wing: CGFloat { wingWidth }
+    var wing: CGFloat { (wingWidth * textScale).rounded() }
 
     /// Whether the compact live state has room for the song title (no camera
     /// in the middle: an island, or a drawn notch on a screen without one).
@@ -776,24 +823,26 @@ final class NotchViewModel {
                 // for the camera dots when they're on).
                 return idleUsesWings
                     ? CGSize(width: closedSize.width + (wing + dotsWing) * 2, height: closedSize.height)
-                    : CGSize(width: Self.idleContentWidth, height: closedSize.height)
+                    : CGSize(width: (Self.idleContentWidth * textScale).rounded(), height: closedSize.height)
             }
             return CGSize(width: closedSize.width + dotsWing * 2, height: closedSize.height)
         case .live, .timer, .event, .download, .reminder, .call, .external:
             return isIsland
-                ? CGSize(width: closedSize.width + Self.liveExtraWidth, height: closedSize.height)
+                ? CGSize(width: closedSize.width + (Self.liveExtraWidth * textScale).rounded(), height: closedSize.height)
                 : CGSize(width: closedSize.width + wing * 2 + (notchSplit(for: mode) ? notchExtension : 0),
                          height: closedSize.height)
         case .locked, .unlocking:
             // Island: just the lock, as wide as the idle clock. Notch: the lock
             // needs a wing beside the camera.
             return isIsland
-                ? CGSize(width: Self.idleContentWidth, height: closedSize.height)
+                ? CGSize(width: (Self.idleContentWidth * textScale).rounded(), height: closedSize.height)
                 : CGSize(width: closedSize.width + wing * 2, height: closedSize.height)
         case .banner:
             return isIsland
-                ? CGSize(width: min(max(panelSize.width - 180, 340), 460), height: 72)
-                : CGSize(width: max(closedSize.width + wing * 2 + 140, 380), height: closedSize.height + 66)
+                ? CGSize(width: min(max(panelSize.width - 180, 340 * textScale), 460 * textScale).rounded(),
+                         height: (72 * textScale).rounded())
+                : CGSize(width: max(closedSize.width + wing * 2 + 140 * textScale, 380 * textScale).rounded(),
+                         height: closedSize.height + (66 * textScale).rounded())
         case .expanded:
             // Same content area on both kinds of screen; only the header differs.
             let island = PanelLayout.island
@@ -894,12 +943,12 @@ final class NotchViewModel {
         if top > 0, let left = screen.auxiliaryTopLeftArea, let right = screen.auxiliaryTopRightArea {
             hasNotch = true
             hardwareNotchHeight = top
-            closedSize = isIsland ? pillSize : CGSize(width: (screen.frame.width - left.width - right.width).rounded(),
+            closedSize = isIsland ? scaledPillSize : CGSize(width: (screen.frame.width - left.width - right.width).rounded(),
                                                        height: top)
         } else {
             hasNotch = false
             hardwareNotchHeight = 0
-            closedSize = pillSize
+            closedSize = scaledPillSize
         }
     }
 }
@@ -990,6 +1039,8 @@ final class NotchUIState {
     var hoveredAlert: UUID?
     /// The Live Activity card under the pointer (its x shows).
     var hoveredLiveActivity: String?
+    /// On the lock screen: the artwork fills the screen.
+    var showsArtworkFullScreen = false
     /// The last activity shown in the split-off circle.
     var bubbleEntry: ActivityEntry?
     /// The pointer is over the circle (it grows a little: it can be clicked).
@@ -1005,3 +1056,13 @@ final class NotchUIState {
     var progressHovering = false
     var dragFraction: Double?
 }
+
+/// Settings > Appearance > Text Size, for the font sizes in the island:
+/// `fs(13)` is 13 points at the default size. A plain value rather than an
+/// environment one so every view reads it the same way; the island redraws
+/// from scratch when it changes.
+enum TextScale {
+    nonisolated(unsafe) static var factor: CGFloat = 1
+}
+
+func fs(_ size: CGFloat) -> CGFloat { size * TextScale.factor }

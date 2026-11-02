@@ -240,6 +240,14 @@ struct SettingsView: View {
             Toggle(isOn: Binding(get: { vm.showOnLockScreen }, set: { vm.setShowOnLockScreen($0) })) {
                 RowLabel("Show on Lock Screen", symbol: "lock.fill", color: SettingsIcon.black)
             }
+            Toggle(isOn: Binding(get: { vm.showsLockScreenPlayer }, set: { vm.setShowsLockScreenPlayer($0) })) {
+                RowLabel("Music Player on Lock Screen", symbol: "play.square.fill", color: .pink)
+            }
+            .disabled(!vm.showOnLockScreen)
+            Toggle(isOn: Binding(get: { vm.showsLockScreenActivities }, set: { vm.setShowsLockScreenActivities($0) })) {
+                RowLabel("Live Activities on Lock Screen", symbol: "dot.radiowaves.left.and.right", color: .green)
+            }
+            .disabled(!vm.showOnLockScreen)
             Toggle(isOn: Binding(get: { vm.hideIdleWithoutNotch }, set: { vm.setHideIdleWithoutNotch($0) })) {
                 RowLabel("Hide When Idle", symbol: "eye.slash.fill", color: .gray)
             }
@@ -312,6 +320,19 @@ struct SettingsView: View {
         }
 
         Section {
+            Picker("Text Size", selection: Binding(get: { vm.textScale }, set: { vm.setTextScale($0) })) {
+                ForEach(NotchViewModel.textScales, id: \.value) { option in
+                    Text(option.title).tag(option.value)
+                }
+            }
+            .pickerStyle(.segmented)
+        } header: {
+            Text("Text")
+        } footer: {
+            footnote("Bigger text makes the pill, the banners and the panel bigger with it, so nothing gets cut. On a MacBook's notch the pill keeps the camera housing's height and grows sideways.")
+        }
+
+        Section {
             sizeSlider("Width",
                        value: Binding(get: { vm.pillSize.width },
                                       set: { vm.setPillSize(CGSize(width: $0, height: vm.pillSize.height)) }),
@@ -340,12 +361,12 @@ struct SettingsView: View {
 
         Section {
             sizeSlider("Width",
-                       value: Binding(get: { vm.panelSize.width },
-                                      set: { vm.setPanelSize(CGSize(width: $0, height: vm.panelSize.height)) }),
+                       value: Binding(get: { vm.basePanelSize.width },
+                                      set: { vm.setPanelSize(CGSize(width: $0, height: vm.basePanelSize.height)) }),
                        in: NotchViewModel.panelWidthRange)
             sizeSlider("Height",
-                       value: Binding(get: { vm.panelSize.height },
-                                      set: { vm.setPanelSize(CGSize(width: vm.panelSize.width, height: $0)) }),
+                       value: Binding(get: { vm.basePanelSize.height },
+                                      set: { vm.setPanelSize(CGSize(width: vm.basePanelSize.width, height: $0)) }),
                        in: NotchViewModel.panelHeightRange)
             Toggle("Keep Open While Adjusting",
                    isOn: Binding(get: { vm.isPreviewingExpanded }, set: { vm.isPreviewingExpanded = $0 }))

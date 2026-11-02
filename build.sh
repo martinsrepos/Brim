@@ -56,6 +56,10 @@ lipo -create build/obj/*/"$APP_NAME" -output "$APP/Contents/MacOS/$APP_NAME"
 
 cp Info.plist "$APP/Contents/Info.plist"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+# Turntable clips for the AirPods and Beats banners, if any are included.
+if [ -d Resources/DeviceAnimations ]; then
+  cp -R Resources/DeviceAnimations "$APP/Contents/Resources/DeviceAnimations"
+fi
 cp Vendor/mediaremote-adapter/LICENSE "$APP/Contents/Resources/mediaremote-adapter-LICENSE.txt"
 
 # Now Playing helper (Vendor/mediaremote-adapter, BSD license): lets Brim see

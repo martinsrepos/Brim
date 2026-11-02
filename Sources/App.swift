@@ -529,6 +529,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         login.state = SMAppService.mainApp.status == .enabled ? .on : .off
         menu.addItem(login)
         menu.addItem(menuItem("Send Test Notification", #selector(sendTest)))
+        // Hold Option: the AirPods banners, one after the other.
+        let airPods = menuItem("Send Test AirPods Banners", #selector(sendAirPodsTest))
+        airPods.keyEquivalentModifierMask = [.option]
+        airPods.isAlternate = true
+        menu.addItem(airPods)
         menu.addItem(.separator())
         if let update = Updater.shared.update {
             menu.addItem(menuItem("Update to Brim \(update.version)…", #selector(openUpdate)))
@@ -554,6 +559,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         alerts.post(NotchAlert(symbol: "bell.badge.fill", tint: .orange,
                                title: "Test Notification",
                                body: "This is how notifications will look in the notch."))
+    }
+
+    @objc private func sendAirPodsTest() {
+        for alert in BluetoothMonitor.testAlerts() { alerts.post(alert) }
     }
 
     @objc private func openNotificationLog() {

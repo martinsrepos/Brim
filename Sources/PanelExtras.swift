@@ -106,10 +106,10 @@ struct ShelfView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 Image(systemName: "tray.full.fill")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.system(size: fs(10), weight: .semibold))
                     .foregroundStyle(.secondary)
                 Text("Shelf")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: fs(11), weight: .semibold))
                     .foregroundStyle(.secondary)
                 Spacer(minLength: 4)
                 if !shelf.items.isEmpty {
@@ -117,7 +117,7 @@ struct ShelfView: View {
                         shelf.airDrop()
                     } label: {
                         Text("AirDrop")
-                            .font(.system(size: 10.5, weight: .semibold))
+                            .font(.system(size: fs(10.5), weight: .semibold))
                             .padding(.horizontal, 7)
                             .frame(height: 18)
                             .background(Capsule().fill(Color.primary.opacity(0.1)))
@@ -128,7 +128,7 @@ struct ShelfView: View {
                         shelf.clear()
                     } label: {
                         Text("Clear")
-                            .font(.system(size: 10.5, weight: .semibold))
+                            .font(.system(size: fs(10.5), weight: .semibold))
                             .padding(.horizontal, 7)
                             .frame(height: 18)
                             .background(Capsule().fill(Color.primary.opacity(0.1)))
@@ -138,7 +138,7 @@ struct ShelfView: View {
             }
             if shelf.items.isEmpty {
                 Text("Drop to keep it here")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: fs(11), weight: .medium))
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, minHeight: 44)
             } else {
@@ -182,7 +182,7 @@ private struct ShelfItemView: View {
                 .interpolation(.high)
                 .frame(width: 32, height: 32)
             Text(item.name)
-                .font(.system(size: 9.5, weight: .medium))
+                .font(.system(size: fs(9.5), weight: .medium))
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .frame(width: 52)
