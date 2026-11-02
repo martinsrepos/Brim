@@ -95,8 +95,33 @@ final class LiveActivityMonitor {
 
     // MARK: - Reading
 
+    // MARK: - Demo Mode
+
+    /// Demo Mode's made-up activities replace the real ones while it runs.
+    @ObservationIgnored private(set) var isDemo = false
+
+    func setDemo(_ list: [ExternalActivity]?) {
+        if let list {
+            isDemo = true
+            withAnimation(.spring(response: 0.45, dampingFraction: 0.88)) { items = list }
+        } else {
+            isDemo = false
+            items = []
+            lastStamp = ""
+            if isEnabled { poll() }
+        }
+    }
+
+    /// A banner for a demo activity, like a real goal.
+    func demoBanner(_ activity: ExternalActivity, title: String, body: String?) {
+        var alert = NotchAlert(symbol: "dot.radiowaves.left.and.right", tint: .green, title: title, body: body,
+                               appIcon: activity.icon, appName: activity.appName, duration: 5)
+        alert.isDemo = true
+        onAlert?(alert)
+    }
+
     private func poll() {
-        guard !QuietState.shared.isDark else { return }
+        guard !QuietState.shared.isDark, !isDemo else { return }
         Diag.count("liveActivities.check")
         let stamp = Self.stamp()
         if stamp != lastStamp {
@@ -188,7 +213,7 @@ final class LiveActivityMonitor {
     /// The app itself when it's on this Mac; otherwise iPhone Mirroring,
     /// like clicking the activity in the menu bar.
     func open(_ id: String) {
-        guard let activity = items.first(where: { $0.id == id }) else { return }
+        guard !isDemo, let activity = items.first(where: { $0.id == id }) else { return }
         if let url = AppLocator.url(for: activity.bundleID) {
             NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration(), completionHandler: nil)
         } else if let mirroring = Self.iPhoneMirroring {
@@ -615,7 +640,11 @@ enum IPhoneAppIcons {
     private static let folder = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Group Containers/group.com.apple.chronod/chronod/icons")
 
+    /// Demo Mode's made-up apps.
+    static var demoIcons: [String: NSImage] = [:]
+
     static func icon(for bundleID: String) -> NSImage? {
+        if let image = demoIcons[bundleID] { return image }
         if let image = cache[bundleID] { return image }
         // Not there yet: look again after a minute, not on every redraw.
         if let tried = missing[bundleID], Date().timeIntervalSince(tried) < 60 { return nil }

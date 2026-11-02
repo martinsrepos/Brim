@@ -124,6 +124,24 @@ final class LockMonitor {
         }
     }
 
+    /// Demo Mode: the unlock, played without locking the Mac (the closed lock,
+    /// then it swings open and the island settles).
+    func demoUnlock() {
+        guard state == .unlocked else { return }
+        settleTask?.cancel()
+        isOpen = false
+        state = .unlocking
+        settleTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 900_000_000)
+            guard !Task.isCancelled else { return }
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { self?.isOpen = true }
+            try? await Task.sleep(nanoseconds: 900_000_000)
+            guard !Task.isCancelled else { return }
+            self?.state = .unlocked
+            self?.isOpen = false
+        }
+    }
+
     /// Covers the case where Brim launches while the screen is already locked.
     private static var sessionIsLocked: Bool {
         guard let session = CGSessionCopyCurrentDictionary() as? [String: Any] else { return false }

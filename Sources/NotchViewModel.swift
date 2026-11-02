@@ -173,6 +173,8 @@ final class NotchViewModel {
     let editors = ScriptEditorWindows()
     /// Files dropped on the island, and your Shortcuts buttons.
     let shelf = FileShelf()
+    /// What Demo Mode is showing (made-up calls, meetings, downloads).
+    let demo = DemoState()
     /// Other apps' Live Activities, from this Mac and the iPhone.
     let liveActivities = LiveActivityMonitor()
     let shortcuts = ShortcutButtons()
@@ -516,9 +518,32 @@ final class NotchViewModel {
         if on { calls.start() } else { calls.stop() }
     }
 
-    /// The call going on, when calls are switched on.
+    /// The call going on, when calls are switched on (Demo Mode's own while
+    /// it runs).
     var currentCall: CallMonitor.Call? {
-        showCalls ? calls.current : nil
+        if demo.isRunning { return demo.call }
+        return showCalls ? calls.current : nil
+    }
+
+    /// The camera and microphone dots (Demo Mode's own while it runs).
+    var cameraDotOn: Bool { demo.isRunning ? demo.camera : privacy.cameraInUse }
+    var micDotOn: Bool { demo.isRunning ? demo.microphone : privacy.microphoneInUse }
+
+    var callIsMuted: Bool { demo.isRunning ? demo.callMuted : calls.isMuted }
+    var callCanMute: Bool { demo.isRunning || calls.canMute }
+
+    func toggleCallMute() {
+        if demo.isRunning {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { demo.callMuted.toggle() }
+        } else {
+            calls.toggleMute()
+        }
+    }
+
+    /// The download in progress, when downloads are switched on.
+    var currentDownload: DownloadMonitor.Active? {
+        if demo.isRunning { return demo.download }
+        return showDownloads ? downloads.active : nil
     }
 
     func setShowClock(_ on: Bool) {
@@ -557,7 +582,8 @@ final class NotchViewModel {
 
     /// The reminder due soon, when reminders are switched on.
     var upcomingReminder: ReminderMonitor.Item? {
-        showReminders ? reminders.next : nil
+        if demo.isRunning { return demo.reminder }
+        return showReminders ? reminders.next : nil
     }
 
     func setShowOnLockScreen(_ show: Bool) {
@@ -611,7 +637,7 @@ final class NotchViewModel {
         let minutes = upcomingEvent.map { calendar.minutesUntil($0) }
         if let minutes, minutes <= 5 { list.append(ActivityEntry(mode: .event)) }
         if upcomingReminder != nil, !reminderDue { list.append(ActivityEntry(mode: .reminder)) }
-        if showDownloads, downloads.active != nil { list.append(ActivityEntry(mode: .download)) }
+        if currentDownload != nil { list.append(ActivityEntry(mode: .download)) }
         if let minutes, minutes > 5, minutes <= 15 { list.append(ActivityEntry(mode: .event)) }
         return list
     }
@@ -693,7 +719,8 @@ final class NotchViewModel {
 
     /// The next meeting, when calendar events are switched on.
     var upcomingEvent: CalendarMonitor.Event? {
-        showCalendar ? calendar.next : nil
+        if demo.isRunning { return demo.event }
+        return showCalendar ? calendar.next : nil
     }
 
     /// Priority: hover panel, the brief unlock animation, a notification, then
@@ -938,7 +965,7 @@ final class NotchViewModel {
     var dotsWing: CGFloat { !isIsland && hasNotch && showsPrivacyDot ? 30 : 0 }
 
     var showsPrivacyDot: Bool {
-        showPrivacyDots && (privacy.cameraInUse || privacy.microphoneInUse)
+        showPrivacyDots && (cameraDotOn || micDotOn)
     }
 
     /// Reads the real notch size, or uses a compact floating island.

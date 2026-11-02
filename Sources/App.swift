@@ -42,6 +42,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var settings: SettingsWindowController!
     private var power: PowerMonitor?
     private var bluetooth: BluetoothMonitor?
+    #if DEMO
+    private var demo: DemoRunner?
+    #endif
     private var statusItem: NSStatusItem!
 
     private let defaults = UserDefaults.standard
@@ -139,7 +142,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                          body: "Click to update. It takes a few seconds.",
                                          duration: 8, action: .openUpdate))
         }
+        #if !DEMO
+        // Brim Demo never updates itself (it isn't a release).
         Updater.shared.start()
+        #endif
 
         vm.liveActivities.onAlert = { [weak self] alert in self?.alerts.post(alert) }
         vm.liveActivities.start()
@@ -452,6 +458,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Rebuilt each time it opens, so every check mark reflects the current state.
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
+        #if DEMO
+        // Brim Demo (./build.sh demo): Demo Mode comes first.
+        menu.addItem(menuItem(demo?.isRunning == true ? "Stop Demo" : "Run Demo", #selector(toggleDemo)))
+        menu.addItem(.separator())
+        #endif
 
         // Notifications
         let mirrorItem = menuItem("Show Mac Notifications", #selector(toggleMirror(_:)))
@@ -560,6 +571,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                title: "Test Notification",
                                body: "This is how notifications will look in the notch."))
     }
+
+    #if DEMO
+    @objc private func toggleDemo() {
+        if demo == nil { demo = DemoRunner(vm: vm, alerts: alerts) }
+        guard let demo else { return }
+        if demo.isRunning { demo.stop() } else { demo.start() }
+    }
+    #endif
 
     @objc private func sendAirPodsTest() {
         for alert in BluetoothMonitor.testAlerts() { alerts.post(alert) }

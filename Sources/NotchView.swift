@@ -145,8 +145,8 @@ struct IslandRootView: View {
         // header row instead, where they take their own place.
         .overlay(alignment: .top) {
             if !vm.isIsland && mode != .expanded {
-                let count = CGFloat((vm.showPrivacyDots && vm.privacy.cameraInUse ? 1 : 0)
-                                    + (vm.showPrivacyDots && vm.privacy.microphoneInUse ? 1 : 0))
+                let count = CGFloat((vm.showPrivacyDots && vm.cameraDotOn ? 1 : 0)
+                                    + (vm.showPrivacyDots && vm.micDotOn ? 1 : 0))
                 let dotsWidth = count * PrivacyDots.defaultSize + max(0, count - 1) * 4
                 privacyDots(size: PrivacyDots.defaultSize)
                     .offset(x: vm.hasNotch ? vm.cameraGap / 2 + 2 + dotsWidth / 2 - vm.shapeShift(for: mode) : 0,
@@ -188,11 +188,11 @@ struct IslandRootView: View {
     }
 
     private func privacyDots(size: CGFloat) -> some View {
-        PrivacyDots(camera: vm.showPrivacyDots && vm.privacy.cameraInUse,
-                    microphone: vm.showPrivacyDots && vm.privacy.microphoneInUse,
+        PrivacyDots(camera: vm.showPrivacyDots && vm.cameraDotOn,
+                    microphone: vm.showPrivacyDots && vm.micDotOn,
                     size: size)
-            .animation(.easeOut(duration: 0.2), value: vm.privacy.cameraInUse)
-            .animation(.easeOut(duration: 0.2), value: vm.privacy.microphoneInUse)
+            .animation(.easeOut(duration: 0.2), value: vm.cameraDotOn)
+            .animation(.easeOut(duration: 0.2), value: vm.micDotOn)
     }
 
     /// The music pill's progress: a faint band along the pill's bottom edge,
@@ -282,7 +282,7 @@ struct IslandRootView: View {
             }
         case .call:
             if let call = vm.currentCall {
-                CallActivityView(call: call, isMuted: vm.calls.isMuted,
+                CallActivityView(call: call, isMuted: vm.callIsMuted,
                                  notchWidth: vm.cameraGap, height: vm.closedSize.height,
                                  layout: vm.compactLayout, showsTitle: vm.showsTitleWhenCompact)
                     .transition(contentTransition)
@@ -295,7 +295,7 @@ struct IslandRootView: View {
                     .transition(contentTransition)
             }
         case .download:
-            if let download = vm.downloads.active {
+            if let download = vm.currentDownload {
                 DownloadActivityView(download: download, notchWidth: vm.cameraGap,
                                      height: vm.closedSize.height, layout: vm.compactLayout,
                                      showsTitle: vm.showsTitleWhenCompact)
@@ -694,7 +694,7 @@ struct BubbleView: View {
                 }
             }
         case .download:
-            if let download = vm.downloads.active {
+            if let download = vm.currentDownload {
                 ZStack {
                     EdgeRing(progress: download.fraction, tint: .blue)
                     Image(systemName: download.symbol)
@@ -710,8 +710,8 @@ struct BubbleView: View {
                 // A green ring and the call's length; a red slashed mic when muted.
                 TimelineView(.periodic(from: .now, by: 1)) { context in
                     ZStack {
-                        EdgeRing(progress: 1, tint: vm.calls.isMuted ? .red : .green)
-                        if vm.calls.isMuted {
+                        EdgeRing(progress: 1, tint: vm.callIsMuted ? .red : .green)
+                        if vm.callIsMuted {
                             Image(systemName: "mic.slash.fill")
                                 .font(.system(size: (h * 0.34).rounded(), weight: .semibold))
                                 .foregroundStyle(Color.red)
@@ -2134,10 +2134,10 @@ struct ExpandedView: View {
     /// The camera and microphone dots, as an item in the header row (no
     /// width when neither is on).
     private var privacyDots: some View {
-        PrivacyDots(camera: vm.showPrivacyDots && vm.privacy.cameraInUse,
-                    microphone: vm.showPrivacyDots && vm.privacy.microphoneInUse)
-            .animation(.easeOut(duration: 0.2), value: vm.privacy.cameraInUse)
-            .animation(.easeOut(duration: 0.2), value: vm.privacy.microphoneInUse)
+        PrivacyDots(camera: vm.showPrivacyDots && vm.cameraDotOn,
+                    microphone: vm.showPrivacyDots && vm.micDotOn)
+            .animation(.easeOut(duration: 0.2), value: vm.cameraDotOn)
+            .animation(.easeOut(duration: 0.2), value: vm.micDotOn)
     }
 
     @ViewBuilder
@@ -2326,15 +2326,15 @@ struct ExpandedView: View {
                 EventCard(event: event, minutes: vm.calendar.minutesUntil(event))
             }
             if let call = vm.currentCall {
-                CallRow(call: call, isMuted: vm.calls.isMuted, canMute: vm.calls.canMute,
-                        onMute: { vm.calls.toggleMute() }, onOpen: { vm.calls.openApp() })
+                CallRow(call: call, isMuted: vm.callIsMuted, canMute: vm.callCanMute,
+                        onMute: { vm.toggleCallMute() }, onOpen: { if !vm.demo.isRunning { vm.calls.openApp() } })
             }
             if let reminder = vm.upcomingReminder {
                 ReminderRow(reminder: reminder, minutes: vm.reminders.minutesUntil(reminder),
                             onDone: { vm.reminders.complete(reminder) },
                             onDismiss: { withAnimation(.spring(response: 0.35, dampingFraction: 0.9)) { vm.reminders.dismiss(reminder) } })
             }
-            if vm.showDownloads, let download = vm.downloads.active {
+            if let download = vm.currentDownload {
                 DownloadRow(download: download)
             }
             NotificationListView(alerts: alerts, liveActivities: vm.liveActivities)
@@ -2824,6 +2824,36 @@ struct ModeButton: View {
     }
 }
 
+#if DEMO
+/// Brim Demo's mirror: a purple-blue gradient with a white silhouette, in
+/// place of the camera.
+struct DemoMirror: View {
+    var body: some View {
+        GeometryReader { geo in
+            let side = geo.size.width
+            ZStack {
+                LinearGradient(colors: [Color(red: 0.56, green: 0.49, blue: 0.94),
+                                        Color(red: 0.36, green: 0.48, blue: 0.91),
+                                        Color(red: 0.17, green: 0.24, blue: 0.56)],
+                               startPoint: .topLeading, endPoint: .bottomTrailing)
+                RadialGradient(colors: [.white.opacity(0.35), .clear], center: UnitPoint(x: 0.3, y: 0.2),
+                               startRadius: 0, endRadius: side * 0.6)
+                Ellipse()
+                    .fill(Color.white.opacity(0.45))
+                    .frame(width: side * 0.29, height: side * 0.33)
+                    .position(x: side / 2, y: side * 0.41)
+                UnevenRoundedRectangle(topLeadingRadius: side * 0.34, topTrailingRadius: side * 0.34)
+                    .fill(Color.white.opacity(0.45))
+                    .frame(width: side * 0.69, height: side * 0.36)
+                    .position(x: side / 2, y: side * 0.82 + side * 0.03)
+            }
+            .frame(width: side, height: side)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+}
+#endif
+
 /// The Mac's camera as a square mirror, in the player's place (the panel
 /// grows to make room). The camera runs only while this is on screen (the
 /// green dot shows), and stops when you close it or the panel.
@@ -2832,6 +2862,20 @@ struct MirrorView: View {
     private let camera = MirrorCamera.shared
 
     var body: some View {
+        #if DEMO
+        // Brim Demo: never the camera. A soft gradient and a silhouette.
+        DemoMirror()
+            .aspectRatio(1, contentMode: .fit)
+            .overlay(alignment: .topTrailing) {
+                overlayButton("xmark", label: "Close Mirror", action: close)
+                    .padding(7)
+            }
+        #else
+        cameraMirror
+        #endif
+    }
+
+    private var cameraMirror: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(Color.primary.opacity(0.06))

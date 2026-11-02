@@ -5,10 +5,21 @@
 #   ./build.sh run       build and launch
 #   ./build.sh install   build, copy to /Applications and launch
 #   ./build.sh dmg       build for Apple silicon and Intel, and pack build/Brim-<version>.dmg
+#   ./build.sh demo      build "Brim Demo" (Demo Mode, for recording), install it and launch it
+#                        in place of Brim. Never published; open Brim again when you're done.
 set -euo pipefail
 cd "$(dirname "$0")"
 
+MODE="${1:-}"
+# The program inside the app is always "Brim"; the demo app only has its
+# own name, bundle ID and Demo Mode.
+EXEC_NAME="Brim"
 APP_NAME="Brim"
+EXTRA_FLAGS=()
+if [[ "$MODE" == "demo" ]]; then
+  APP_NAME="Brim Demo"
+  EXTRA_FLAGS=(-D DEMO)
+fi
 APP="build/$APP_NAME.app"
 
 if ! command -v swiftc >/dev/null 2>&1; then
@@ -17,7 +28,6 @@ if ! command -v swiftc >/dev/null 2>&1; then
   exit 1
 fi
 
-MODE="${1:-}"
 SDK="$(xcrun --sdk macosx --show-sdk-path)"
 # A DMG is for other Macs too: build for both kinds of processor.
 if [[ "$MODE" == "dmg" ]]; then ARCHS="arm64 x86_64"; else ARCHS="$(uname -m)"; fi
@@ -28,9 +38,9 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 for ARCH in $ARCHS; do
 echo "Compiling $APP_NAME for $ARCH..."
 mkdir -p "build/obj/$ARCH"
-swiftc Sources/*.swift \
-  -module-name "$APP_NAME" \
-  -o "build/obj/$ARCH/$APP_NAME" \
+swiftc Sources/*.swift ${EXTRA_FLAGS[@]+"${EXTRA_FLAGS[@]}"} \
+  -module-name "$EXEC_NAME" \
+  -o "build/obj/$ARCH/$EXEC_NAME" \
   -sdk "$SDK" \
   -target "$ARCH-apple-macos14.0" \
   -parse-as-library \
@@ -52,9 +62,15 @@ swiftc Sources/*.swift \
   -lsqlite3
 done
 # One binary holding every architecture built.
-lipo -create build/obj/*/"$APP_NAME" -output "$APP/Contents/MacOS/$APP_NAME"
+lipo -create build/obj/*/"$EXEC_NAME" -output "$APP/Contents/MacOS/$EXEC_NAME"
 
 cp Info.plist "$APP/Contents/Info.plist"
+if [[ "$MODE" == "demo" ]]; then
+  # Its own app to macOS: its own settings, so recording never touches Brim's.
+  /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier app.brim.mac.demo" \
+                          -c "Set :CFBundleName Brim Demo" \
+                          -c "Set :CFBundleDisplayName Brim Demo" "$APP/Contents/Info.plist"
+fi
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 # Turntable clips for the AirPods and Beats banners, if any are included.
 if [ -d Resources/DeviceAnimations ]; then
@@ -116,11 +132,11 @@ echo "Built $APP"
 
 case "$MODE" in
   run)
-    pkill -x "$APP_NAME" 2>/dev/null || true
+    pkill -x "$EXEC_NAME" 2>/dev/null || true
     open "$APP"
     ;;
   install)
-    pkill -x "$APP_NAME" 2>/dev/null || true
+    pkill -x "$EXEC_NAME" 2>/dev/null || true
     # Brim used to be called Halo: the old app goes (its settings and
     # scripts move over to Brim on first launch).
     if [[ -d "/Applications/Halo.app" ]]; then
@@ -174,6 +190,15 @@ APPLESCRIPT
     rm -f build/rw.dmg
     rm -rf "$STAGE"
     codesign --force --sign "$IDENTITY" "$DMG" >/dev/null 2>&1 || true
-    echo "Made $DMG ($(lipo -archs "$APP/Contents/MacOS/$APP_NAME"))"
+    echo "Made $DMG ($(lipo -archs "$APP/Contents/MacOS/$EXEC_NAME"))"
+    ;;
+  demo)
+    # Brim and Brim Demo would both draw an island: Brim steps aside.
+    pkill -x "$EXEC_NAME" 2>/dev/null || true
+    rm -rf "/Applications/$APP_NAME.app"
+    cp -R "$APP" /Applications/
+    open "/Applications/$APP_NAME.app"
+    echo "Installed Brim Demo and launched it (Brim is closed for now)."
+    echo "Run Demo is in its menu bar menu. When you're done: quit it and run  open -a Brim"
     ;;
 esac

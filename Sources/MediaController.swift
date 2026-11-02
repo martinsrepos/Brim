@@ -94,6 +94,51 @@ final class MediaController {
     private(set) var artwork: NSImage?
     private(set) var accent: Color = .white
 
+    // MARK: Demo Mode
+
+    /// Demo Mode is showing its own songs; the real player is ignored until
+    /// it ends.
+    @ObservationIgnored private(set) var isDemo = false
+    /// Next and previous while in Demo Mode (1 or -1).
+    @ObservationIgnored var onDemoSkip: (@MainActor (Int) -> Void)?
+    @ObservationIgnored private var lastSystemState: [String: Any]?
+
+    func beginDemo() {
+        isDemo = true
+    }
+
+    /// A made-up song, with its own artwork.
+    func showDemo(_ newTrack: MediaTrack, artwork image: NSImage, playing: Bool, position: Double, forward: Bool = true) {
+        guard isDemo else { return }
+        trackDirection = forward ? 1 : -1
+        track = newTrack
+        isPlaying = playing
+        basePosition = position
+        baseDate = Date()
+        artwork = image
+        accent = image.notchAccent ?? .white
+        artworkKey = "demo|\(newTrack.title)"
+    }
+
+    /// Nothing playing, for a quiet island.
+    func clearDemoTrack() {
+        guard isDemo else { return }
+        clearState()
+    }
+
+    /// Back to what's really playing.
+    func endDemo() {
+        guard isDemo else { return }
+        isDemo = false
+        clearState()
+        artworkFingerprint = nil
+        if usesSystem, let state = lastSystemState {
+            applySystem(state)
+        } else {
+            refreshAll()
+        }
+    }
+
     /// Called when a new song starts (after its artwork has loaded).
     @ObservationIgnored var onTrackChange: (@MainActor (MediaTrack) -> Void)?
 
@@ -179,6 +224,7 @@ final class MediaController {
 
     /// Called when the notch opens so the progress bar is exact.
     func syncNow() {
+        guard !isDemo else { return }
         refreshLoved()
         guard !usesSystem else { return }  // the system feed is already live
         if player == nil { refreshAll() } else { refresh() }
@@ -287,6 +333,12 @@ final class MediaController {
     // MARK: - Controls
 
     func playPause() {
+        if isDemo {
+            basePosition = position(at: Date())
+            baseDate = Date()
+            isPlaying.toggle()
+            return
+        }
         if usesSystem, track != nil {
             basePosition = position(at: Date())
             baseDate = Date()
@@ -303,6 +355,7 @@ final class MediaController {
     }
 
     func next() {
+        if isDemo { onDemoSkip?(1); return }
         if usesSystem { adapter?.send(.nextTrack); return }
         guard let p = player, p.isRunning else { return }
         AppleScript.run("tell application id \"\(p.bundleID)\" to next track")
@@ -310,6 +363,7 @@ final class MediaController {
     }
 
     func previous() {
+        if isDemo { onDemoSkip?(-1); return }
         lastPreviousPress = Date()
         if usesSystem { adapter?.send(.previousTrack); return }
         guard let p = player, p.isRunning else { return }
@@ -318,6 +372,11 @@ final class MediaController {
     }
 
     func seek(to seconds: Double) {
+        if isDemo {
+            basePosition = seconds
+            baseDate = Date()
+            return
+        }
         if usesSystem {
             basePosition = seconds
             baseDate = Date()
@@ -340,7 +399,7 @@ final class MediaController {
     // MARK: - Events
 
     private func playerChanged(_ source: PlayerApp, state: String?) {
-        guard !usesSystem else { return }
+        guard !usesSystem, !isDemo else { return }
         if state == "stopped" {
             // The app may be quitting: never script it here or it would relaunch.
             if player == source {
@@ -362,20 +421,20 @@ final class MediaController {
     }
 
     private func appTerminated(_ bundleID: String?) {
-        guard let player, bundleID == player.bundleID else { return }
+        guard !isDemo, let player, bundleID == player.bundleID else { return }
         clearState()
         self.player = nil
     }
 
     private func poll() {
-        guard !usesSystem else { return }
+        guard !usesSystem, !isDemo else { return }
         if player != nil && isPlaying { refresh() }
     }
 
     // MARK: - Reading state
 
     func refresh() {
-        guard let p = player else { return }
+        guard !isDemo, let p = player else { return }
         guard p.isRunning else {
             clearState()
             player = nil
@@ -386,7 +445,7 @@ final class MediaController {
     }
 
     private func refreshAll() {
-        guard !usesSystem else { return }
+        guard !usesSystem, !isDemo else { return }
         var fallback: (PlayerApp, Snapshot)?
         for app in PlayerApp.allCases where app.isRunning {
             guard let s = Self.query(app), !s.stopped else { continue }
@@ -437,6 +496,9 @@ final class MediaController {
     /// Applies the merged system state. Times are in microseconds (`--micros`);
     /// the elapsed time was measured at `timestampEpochMicros`.
     private func applySystem(_ state: [String: Any]) {
+        // Kept for when Demo Mode ends, which shows it again.
+        lastSystemState = state
+        guard !isDemo else { return }
         guard let title = state["title"] as? String, !title.isEmpty,
               let bundleID = state["bundleIdentifier"] as? String else {
             systemSource = nil

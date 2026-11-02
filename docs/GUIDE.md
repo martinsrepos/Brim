@@ -140,6 +140,18 @@ Versions before 1.1 don't have this, so install 1.1 from the DMG once.
 
 Click the Brim icon in the menu bar for: **Show Mac Notifications**, **Timer**, **Clear Notifications**, **Notification Log…** (see below), **Appearance** (Show on Lock Screen, hide the pill when idle on screens without a notch), **Launch at Login**, **Send Test Notification**, **Check for Updates…** (or **Update to Brim 1.x…** when one is waiting), and **Quit**.
 
+## Brim Demo (for recording a demo)
+
+Brim Demo is a separate build for recording videos of Brim; it's never part of a release. Build and open it with `./build.sh demo`: it closes Brim, installs **Brim Demo** in Applications with its own settings (so recording never changes Brim's), and opens it. Choose **Run Demo** at the top of its menu bar menu. It shows every feature one after another, for about two and a half minutes: the clock and weather in the quiet island; a song playing, pausing and playing again; three messages; the volume, brightness, keyboard backlight and microphone banners; AirPods connecting, their case opening, and the case on its own; a keyboard connecting and a mouse running low; the charger and the charge alert; a delivery beside the music, then clicked into the pill; a live match with a goal; a timer in the pill, then Focus and a stopwatch; a meeting with Join; a due reminder; a download and an AirDrop; the panel with the shelf; the glass going fully clear, then slowly down to solid black; Text Size; the mirror (a gradient with a silhouette, never the camera) with the camera's green dot; the notch style, opening from the notch, then the floating island again; a call on its own, muted, with the microphone's dot; the delivery arriving; Keep Awake; the teleprompter; the lock opening; and the next song.
+
+Everything on screen is Brim's real island; only the data is made up (songs, people, apps, teams). While it runs, your own notifications wait and join the list when it ends, without banners, so nothing personal ends up in the recording.
+
+- **⌃⌥⌘→** skips to the next feature.
+- **⌃⌥⌘Space** pauses the automatic pace (then only ⌃⌥⌘→ moves on), and resumes it.
+- **⌃⌥⌘⌫** stops the demo. So does **Stop Demo** in the menu.
+
+When it ends, the settings it changed (Transparency, Text Size, Keep Awake, Follow My Voice), the music, the timers and the shelf are back as they were. The lock screen cards need the Mac to really be locked, so lock it yourself while recording if you want them in the video. As a new app to macOS, Brim Demo may ask for Bluetooth the first time it opens: answer before you start recording. When you're done, quit Brim Demo and open Brim again (`open -a Brim`).
+
 ## How the lock screen works
 
 macOS hides every app's windows while the screen is locked, except a special layer that Notification Center itself uses there. Brim moves its window into that layer using SkyLight, a private macOS framework, the same technique as the open-source SkyLightWindow package (MIT, by Lakr233) used by MewNotch.

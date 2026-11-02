@@ -39,6 +39,9 @@ struct NotchAlert: Identifiable, Equatable {
     var revision = 0
     /// Clicking it does this instead of opening an app (and then it goes).
     var action: AlertAction? = nil
+    /// Made up by Demo Mode: the only kind shown while it runs, and gone
+    /// from the list when it ends.
+    var isDemo = false
 
     static func == (lhs: NotchAlert, rhs: NotchAlert) -> Bool { lhs.id == rhs.id && lhs.revision == rhs.revision }
 
@@ -79,6 +82,29 @@ final class AlertCenter {
     /// Banners wait (the teleprompter is on): they go to the list, and the
     /// last few show once it's over.
     @ObservationIgnored private var holding = false
+    /// Demo Mode is running (see `beginDemo`).
+    @ObservationIgnored private(set) var demoGate = false
+    @ObservationIgnored private var demoHeld: [NotchAlert] = []
+
+    /// Demo Mode: from now on only its own banners show; yours are kept.
+    func beginDemo() {
+        demoGate = true
+        demoHeld = []
+    }
+
+    /// Demo Mode is over: its banners leave the list, and yours that came in
+    /// meanwhile join it (no banners for them, they're old news by now).
+    func endDemo() {
+        demoGate = false
+        pending.removeAll { $0.isDemo }
+        if current?.isDemo == true {
+            dismissTask?.cancel()
+            advance()
+        }
+        withAnimation(.easeOut(duration: 0.25)) { history.removeAll { $0.isDemo } }
+        for alert in demoHeld { remember(alert) }
+        demoHeld = []
+    }
 
     func holdBanners(_ hold: Bool) {
         guard hold != holding else { return }
@@ -96,6 +122,12 @@ final class AlertCenter {
     /// Shows a banner, and (by default) keeps it in history.
     func post(_ alert: NotchAlert, remember: Bool = true) {
         Diag.count("alerts.post")
+        // Demo Mode: real notifications wait until it's over, so none of
+        // yours end up in a recording.
+        if demoGate, !alert.isDemo {
+            if remember, alert.liveKey == nil { demoHeld.append(alert) }
+            return
+        }
         if remember { self.remember(alert) }
         if holding {
             // Volume, brightness and the like don't matter later.
@@ -119,7 +151,7 @@ final class AlertCenter {
     func postLive(_ alert: NotchAlert) {
         Diag.count("alerts.postLive")
         guard let key = alert.liveKey else { post(alert, remember: false); return }
-        guard !holding else { return }
+        guard !holding, !demoGate || alert.isDemo else { return }
         if var shown = current, shown.liveKey == key {
             shown.symbol = alert.symbol
             shown.tint = alert.tint
@@ -174,6 +206,7 @@ final class AlertCenter {
 
     /// Adds to history only, no banner.
     func remember(_ alert: NotchAlert) {
+        if demoGate, !alert.isDemo { demoHeld.append(alert); return }
         let index = history.firstIndex { $0.date < alert.date } ?? history.endIndex
         history.insert(alert, at: index)
         if history.count > Self.historyLimit {

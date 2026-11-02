@@ -1,0 +1,35 @@
+"""Brim promo sound: OneTake's palette in one room, fewer events than beats."""
+import sys
+sys.path.insert(0, "/root/.claude/skills/onetake/scripts")
+from sfx_palette import Score, air, glass, wood, sub, bubble, wobble
+
+s = Score(dur=30)
+P = s.place
+P(bubble(520), t=0.28, gain=0.45, send=0.3)
+P(air(0.6, 300, 2000, 1.3, 0.4), t=0.45, gain=0.3, send=0.4)
+P(air(0.5, 260, 2200), t=3.0, gain=0.26, send=0.4)
+P(glass(659, 0.9, 0.6), t=3.35, gain=0.16, send=0.45)
+P(wobble(150, 0.6), t=5.82, gain=0.32, send=0.3)
+P(bubble(720), t=6.3, gain=0.28, send=0.35)
+P(bubble(420), t=7.92, gain=0.26, send=0.3)
+for t0, f in ((8.25, 784), (8.8, 880), (9.35, 988)):
+    P(wood(200, 0.12), t=t0, gain=0.32, send=0.2)
+    P(glass(f, 0.7, 0.5), t=t0 + 0.01, gain=0.13, send=0.45)
+P(air(0.4, 2400, 400), t=9.86, gain=0.22, send=0.4)
+P(air(0.7, 200, 1800, 1.2, 0.35), t=10.75, gain=0.36, send=0.45)
+P(sub(70, 0.6), t=10.85, gain=0.3, send=0.2)
+P(wood(230, 0.1), t=13.2, gain=0.5, send=0.15)
+P(air(0.6, 300, 2200), t=13.3, gain=0.3, send=0.4)
+P(air(0.5, 2000, 300), t=16.5, gain=0.26, send=0.4)
+P(wood(120, 0.15), t=17.08, gain=0.42, send=0.25)
+P(wood(260, 0.1), t=18.9, gain=0.3, send=0.2)
+P(glass(523, 1.0, 0.6), t=18.92, gain=0.16, send=0.5)
+P(air(0.6, 300, 2600), t=19.4, gain=0.3, send=0.4)
+P(air(1.0, 200, 3000, 1.2, 0.6), t=22.3, gain=0.32, send=0.45)
+P(sub(55, 0.9), t=23.1, gain=0.42, send=0.25)
+P(glass(523, 1.6, 0.5), t=23.12, gain=0.15, send=0.6)
+P(glass(784, 1.6, 0.4), t=23.14, gain=0.1, send=0.6)
+P(glass(659, 1.4, 0.4), t=25.2, gain=0.11, send=0.6)
+P(glass(988, 1.2, 0.3), t=25.7, gain=0.07, send=0.6)
+s.write("public/sfx.wav", peak_db=-8.0)
+print("ok")
