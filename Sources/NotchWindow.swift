@@ -357,6 +357,15 @@ final class NotchWindowController: NSObject {
             return
         }
         guard let front = NSWorkspace.shared.frontmostApplication else { return }
+        // While you drag a file, the island stays where it is, so you can drop
+        // it on the shelf. Nothing is tucked away mid-drag.
+        if fileDragInProgress() { return }
+        let me = ProcessInfo.processInfo.processIdentifier
+        // Only a real app can be full screen. Brim itself (while its AirDrop
+        // sheet or Settings are open) and helpers without a Dock icon (share
+        // sheets, AirDrop, pickers, overlays) can put a see-through window
+        // over the whole display, and that isn't full screen.
+        let frontCounts = front.processIdentifier != me && front.activationPolicy == .regular
         let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements],
                                                  kCGNullWindowID) as? [[String: Any]] ?? []
         let shieldLevel = Int(CGShieldingWindowLevel())
@@ -364,9 +373,10 @@ final class NotchWindowController: NSObject {
         let coverCandidates: [(rect: CGRect, layer: Int)] = windows.compactMap { window in
             let layer = window[kCGWindowLayer as String] as? Int ?? 0
             let owner = window[kCGWindowOwnerPID as String] as? pid_t
-            let isFront = owner == front.processIdentifier
-            let isShield = layer >= shieldLevel && owner != ProcessInfo.processInfo.processIdentifier
-            guard isFront || isShield,
+            let alpha = window[kCGWindowAlpha as String] as? Double ?? 1
+            let isFront = frontCounts && owner == front.processIdentifier
+            let isShield = layer >= shieldLevel && owner != me
+            guard isFront || isShield, alpha > 0.05,
                   let bounds = window[kCGWindowBounds as String] as? NSDictionary,
                   let rect = CGRect(dictionaryRepresentation: bounds as CFDictionary) else { return nil }
             return (rect, layer)
@@ -401,8 +411,46 @@ final class NotchWindowController: NSObject {
         if vm.fullScreenDisplays != covered { vm.fullScreenDisplays = covered }
         let active = screen.flatMap(Self.displayID(of:)).map { covered.contains($0) } ?? false
         guard vm.isFullScreen != active else { return }
+        // In the diagnostics report, so a wrong tuck can be traced to its app.
+        Diag.event("Full screen \(active ? "on" : "off") (front app: \(front.bundleIdentifier ?? front.localizedName ?? "?"))")
         vm.isFullScreen = active
         vm.isRevealed = false
+    }
+
+    private var spotlightCheckedAt = Date.distantPast
+    private var spotlightOpen = false
+
+    /// Spotlight's search window is on screen (its menu bar icon doesn't
+    /// count). Looked up at most four times a second, and only while the
+    /// panel is open or about to open. Window owners and sizes need no
+    /// permission.
+    private func spotlightIsOpen() -> Bool {
+        guard Date().timeIntervalSince(spotlightCheckedAt) > 0.25 else { return spotlightOpen }
+        spotlightCheckedAt = Date()
+        let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
+        spotlightOpen = windows.contains { window in
+            guard let pid = window[kCGWindowOwnerPID as String] as? pid_t,
+                  NSRunningApplication(processIdentifier: pid)?.bundleIdentifier == "com.apple.Spotlight",
+                  let bounds = window[kCGWindowBounds as String] as? NSDictionary,
+                  let rect = CGRect(dictionaryRepresentation: bounds as CFDictionary) else { return false }
+            return rect.width > 300 && rect.height > 36
+        }
+        return spotlightOpen
+    }
+
+    /// The drag pasteboard's count while no mouse button was down.
+    private var dragCountAtRest = NSPasteboard(name: .drag).changeCount
+
+    /// A file is being dragged right now (from Finder, the desktop or the
+    /// shelf): the button is down and the drag pasteboard changed since it
+    /// went down.
+    private func fileDragInProgress() -> Bool {
+        let board = NSPasteboard(name: .drag)
+        guard NSEvent.pressedMouseButtons & 1 != 0 else {
+            dragCountAtRest = board.changeCount
+            return false
+        }
+        return board.changeCount != dragCountAtRest && (board.types?.contains(.fileURL) ?? false)
     }
 
     /// The full-screen app over which the island stays in view (above the
@@ -445,8 +493,9 @@ final class NotchWindowController: NSObject {
     /// islands stay as they are.
     private var pendingRebuild: DispatchWorkItem?
 
-    /// Waking displays often report two changes in a row: wait half a second
-    /// and rebuild once.
+    /// Waking displays often report two changes in a row, and a Sidecar or
+    /// AirPlay display can come back a second or two after the others: wait
+    /// until they've settled and rebuild once.
     @objc private func screensChanged() {
         pendingRebuild?.cancel()
         let work = DispatchWorkItem { [weak self] in
@@ -459,7 +508,7 @@ final class NotchWindowController: NSObject {
             }
         }
         pendingRebuild = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0, execute: work)
     }
 
     @objc private func tick() {
@@ -471,6 +520,7 @@ final class NotchWindowController: NSObject {
             return
         }
         Diag.count("window.tick")
+        let draggingFile = fileDragInProgress()
         // The teleprompter stays out of screen shares and recordings (if set).
         let sharing: NSWindow.SharingType = vm.prompter.isActive && vm.prompter.hidesFromSharing ? .none : .readOnly
         for island in islands.values where island.panel.sharingType != sharing {
@@ -539,7 +589,10 @@ final class NotchWindowController: NSObject {
 
         // Most of the time the pointer is nowhere near the island: nothing to
         // do, and the check slows down until it comes back near the top.
-        if !vm.isExpanded, !vm.isFullScreen, mouse.y < top - 160 || !NSMouseInRect(mouse, screen.frame, false),
+        // Over a full-screen app (tucked away), the same: only the top edge
+        // matters, and the check speeds up as the pointer gets near it.
+        if !vm.isExpanded, !vm.isFullScreen || !vm.isRevealed,
+           mouse.y < top - 160 || !NSMouseInRect(mouse, screen.frame, false),
            !overBanner, bannerDragStart == nil, hoverStart == nil, !holdHoverUntilLeave, !vm.ui.hoveringBubble {
             if !panel.ignoresMouseEvents { panel.ignoresMouseEvents = true }
             setTickRate(fast: false)
@@ -555,7 +608,9 @@ final class NotchWindowController: NSObject {
             let f = vm.footprint(for: vm.mode)
             if !vm.isRevealed {
                 let edge = NSRect(x: midX - f.width / 2 - 20, y: top - 3, width: f.width + 40, height: 5)
-                if edge.contains(mouse) && NSEvent.pressedMouseButtons == 0 {
+                // A file dragged to the top edge brings it down too, to drop
+                // on the shelf.
+                if edge.contains(mouse) && (NSEvent.pressedMouseButtons == 0 || draggingFile) {
                     vm.isRevealed = true
                     revealedAt = Date()
                     lastInside = Date()
@@ -577,6 +632,14 @@ final class NotchWindowController: NSObject {
             // Give it a moment to drop down before hovering can open it, so
             // touching the edge doesn't throw a big panel over your game.
             guard Date().timeIntervalSince(revealedAt) > 0.4 else { return }
+        }
+
+        // Spotlight opens over the top of the screen too: the panel steps
+        // back (and doesn't open) while it's up, instead of covering it.
+        if vm.isExpanded || hoverStart != nil, spotlightIsOpen() {
+            if vm.isExpanded { setExpanded(false) }
+            hoverStart = nil
+            return
         }
 
         if vm.isExpanded {

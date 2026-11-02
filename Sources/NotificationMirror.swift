@@ -181,9 +181,17 @@ final class NotificationMirror {
         }
         seen = Dictionary(recent.map { ($0.key, $0.fingerprint) }, uniquingKeysWith: { a, _ in a })
         for row in recent { if let date = Self.deliveryDate(of: row) { seenDates[row.key] = date } }
+        // Only the last few hours, and nothing you already cleared or swiped
+        // away: restarting Brim (an update does) shouldn't bring old ones back.
+        var restored = 0
         for row in recent.suffix(12) {
-            if let alert = makeAlert(from: row) { onAlert(alert, false) }
+            guard let alert = makeAlert(from: row),
+                  abs(alert.date.timeIntervalSinceNow) < Self.restoreWindow,
+                  !ClearedNotifications.wasCleared(alert) else { continue }
+            onAlert(alert, false)
+            restored += 1
         }
+        NotificationLog.write("Restored \(restored) recent notifications to the list")
         let keyKind = recent.first?.uuid != nil ? "UUID" : "row + content"
         NotificationLog.write("Started: \(recent.count) recent notifications in the database, tracked by \(keyKind)")
         lastStamp = Self.stamp()
@@ -326,6 +334,9 @@ final class NotificationMirror {
     }
 
     /// Just the delivery date of a record, without building an alert.
+    /// At launch, notifications older than this stay out of the list.
+    private static let restoreWindow: TimeInterval = 6 * 60 * 60
+
     private static func deliveryDate(of row: Row) -> Date? {
         guard let plist = try? PropertyListSerialization.propertyList(from: row.data, format: nil) as? [String: Any] else { return nil }
         if let seconds = plist["date"] as? Double { return Date(timeIntervalSinceReferenceDate: seconds) }

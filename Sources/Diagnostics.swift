@@ -18,6 +18,9 @@ final class Diag: @unchecked Sendable {   // all state behind `lock`
     private var counters: [String: Int] = [:]
     private var events: [(date: Date, text: String)] = []
     private var cpuSamples: [(date: Date, seconds: Double)] = []
+    /// The counters as they were at each of the last few per-minute samples,
+    /// so the report can show what the last ten minutes did on their own.
+    private var counterSamples: [(date: Date, counters: [String: Int])] = []
     private static let eventLimit = 400
     private static let sampleLimit = 120   // two hours of per-minute samples
 
@@ -40,6 +43,8 @@ final class Diag: @unchecked Sendable {   // all state behind `lock`
         shared.lock.lock()
         shared.cpuSamples.append((Date(), seconds))
         if shared.cpuSamples.count > sampleLimit { shared.cpuSamples.removeFirst() }
+        shared.counterSamples.append((Date(), shared.counters))
+        if shared.counterSamples.count > 11 { shared.counterSamples.removeFirst() }
         shared.lock.unlock()
     }
 
@@ -48,6 +53,13 @@ final class Diag: @unchecked Sendable {   // all state behind `lock`
         lock.lock()
         defer { lock.unlock() }
         return (counters, events, cpuSamples)
+    }
+
+    /// The counters about ten minutes ago (the oldest kept sample), and when.
+    func earlierCounters() -> (date: Date, counters: [String: Int])? {
+        lock.lock()
+        defer { lock.unlock() }
+        return counterSamples.first
     }
 
     /// User plus system CPU time used by Brim since launch.
@@ -206,10 +218,23 @@ enum DiagnosticsReport {
         line(perMinute.isEmpty ? "  (not enough samples yet)" : "  " + perMinute.joined(separator: " "))
         line()
 
-        line("== Activity since launch (count, per minute) ==")
+        // Since launch, and the last few minutes on their own: a part that's
+        // suddenly busier shows up here even after hours of normal running.
+        let earlier = Diag.shared.earlierCounters()
+        let recentMinutes = earlier.map { max(now.timeIntervalSince($0.date) / 60, 1) }
+        if let recentMinutes {
+            line(String(format: "== Activity since launch (count, per minute), and the last %.0f minutes ==", recentMinutes))
+        } else {
+            line("== Activity since launch (count, per minute) ==")
+        }
         for (key, value) in counters.sorted(by: { $0.key < $1.key }) {
-            line(String(format: "%@  %ld  (%.1f/min)", key.padding(toLength: 34, withPad: " ", startingAt: 0),
-                        value, Double(value) / minutes))
+            var text = String(format: "%@  %ld  (%.1f/min)", key.padding(toLength: 34, withPad: " ", startingAt: 0),
+                              value, Double(value) / minutes)
+            if let earlier, let recentMinutes {
+                let recentCount = value - (earlier.counters[key] ?? 0)
+                text += String(format: "   recently %.1f/min", Double(recentCount) / recentMinutes)
+            }
+            line(text)
         }
         line()
 
@@ -241,6 +266,7 @@ enum DiagnosticsReport {
             "Reminders \(onOff(vm.showReminders)), calls \(onOff(vm.showCalls)), weather \(onOff(vm.showWeather)), Respect Focus \(onOff(vm.respectFocus))",
             "Volume \(onOff(vm.showVolume)), microphone \(onOff(vm.showMicrophoneMute)), brightness \(onOff(vm.showBrightness)), Logitech \(onOff(vm.showLogitech))",
             "On lock screen: \(onOff(vm.showOnLockScreen)), Keep Awake: \(onOff(vm.keepAwake.isOn))",
+            "Live Activities: \(onOff(vm.liveActivities.isEnabled)) (banners \(onOff(vm.liveActivities.bannersEnabled))), database \(LiveActivityMonitor.isAvailable ? "found" : "not found"), \(vm.liveActivities.items.count) now",
         ]
     }
 

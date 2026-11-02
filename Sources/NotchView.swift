@@ -78,8 +78,20 @@ struct IslandRootView: View {
                      splitGap: vm.bubbleGap) {
             ZStack(alignment: .topLeading) {
                 ZStack(alignment: .topLeading) {
-                    content(for: mode)
-                    sharedArtwork(for: mode, width: pillWidth)
+                    // Tucked away over a full-screen app, nothing is drawn:
+                    // no clock, waveform or rings running out of sight. It
+                    // all comes back as the island drops down.
+                    if !tucked {
+                        content(for: mode)
+                        sharedArtwork(for: mode, width: pillWidth)
+                        // Part of the music pill: it comes and goes with the
+                        // pill's own content (blur and fade), staying at the
+                        // pill's bottom edge instead of sweeping down the panel.
+                        if mode == .live {
+                            musicProgressBand()
+                                .transition(contentTransition)
+                        }
+                    }
                 }
                 .frame(width: pillWidth, height: size.height, alignment: .topLeading)
                 // Island: green camera / orange microphone dots inside, top
@@ -96,7 +108,7 @@ struct IslandRootView: View {
                 // show the next activity when there are several.
                 // Notch: the second activity in its own wing on the right,
                 // past a hairline. Click it to swap, like the island's circle.
-                if notchSplit, let secondaryEntry {
+                if notchSplit, !tucked, let secondaryEntry {
                     Rectangle()
                         .fill(Color.white.opacity(0.14))
                         .frame(width: 1, height: (h * 0.5).rounded())
@@ -108,7 +120,7 @@ struct IslandRootView: View {
                         .transition(.opacity.combined(with: .scale(scale: 0.6)))
                 }
 
-                if vm.isIsland, let bubbleEntry {
+                if vm.isIsland, !tucked, let bubbleEntry {
                     // Grows with the circle on the same spring (the circle
                     // starts at half size too), so they arrive together.
                     BubbleView(entry: bubbleEntry, vm: vm, media: media)
@@ -129,8 +141,10 @@ struct IslandRootView: View {
         // Notch: inside the black, just right of the camera housing (the
         // notch grows a little for them when idle). A notch drawn on a screen
         // without one has no camera, so they sit at its top center.
+        // The open panel has buttons up there, so it puts the dots in its
+        // header row instead, where they take their own place.
         .overlay(alignment: .top) {
-            if !vm.isIsland {
+            if !vm.isIsland && mode != .expanded {
                 let count = CGFloat((vm.showPrivacyDots && vm.privacy.cameraInUse ? 1 : 0)
                                     + (vm.showPrivacyDots && vm.privacy.microphoneInUse ? 1 : 0))
                 let dotsWidth = count * PrivacyDots.defaultSize + max(0, count - 1) * 4
@@ -176,6 +190,20 @@ struct IslandRootView: View {
                     size: size)
             .animation(.easeOut(duration: 0.2), value: vm.privacy.cameraInUse)
             .animation(.easeOut(duration: 0.2), value: vm.privacy.microphoneInUse)
+    }
+
+    /// The music pill's progress: a faint band along the pill's bottom edge,
+    /// coming and going with the pill's content.
+    @ViewBuilder
+    private func musicProgressBand() -> some View {
+        if let duration = media.track?.duration, duration > 0 {
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                PillProgressBar(progress: media.position(at: context.date) / duration, color: media.accent)
+            }
+            .frame(height: vm.closedSize.height, alignment: .bottom)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .allowsHitTesting(false)
+        }
     }
 
     /// The album artwork lives outside the per-state content, so SwiftUI keeps
@@ -228,7 +256,8 @@ struct IslandRootView: View {
                 IdleClockView(height: vm.closedSize.height, fontSize: (vm.closedSize.height * 0.43).rounded(),
                               showsClock: vm.showClock,
                               weather: vm.showWeather ? vm.weather.now : nil,
-                              keepsAwake: vm.keepAwake.isOn)
+                              keepsAwake: vm.keepAwake.isOn,
+                              cameraGap: vm.idleUsesWings ? vm.cameraGap : 0)
                     .transition(contentTransition)
             } else {
                 Color.clear
@@ -264,6 +293,13 @@ struct IslandRootView: View {
                 DownloadActivityView(download: download, notchWidth: vm.cameraGap,
                                      height: vm.closedSize.height, layout: vm.compactLayout,
                                      showsTitle: vm.showsTitleWhenCompact)
+                    .transition(contentTransition)
+            }
+        case .external:
+            if let activity = vm.liveActivities.item(vm.pillExternalID) {
+                ExternalActivityView(activity: activity, notchWidth: vm.cameraGap, height: vm.closedSize.height,
+                                     layout: vm.compactLayout, showsTitle: vm.showsTitleWhenCompact)
+                    .id(activity.id)
                     .transition(contentTransition)
             }
         case .live:
@@ -564,8 +600,10 @@ struct BubbleView: View {
                 .transition(.opacity.combined(with: .scale(scale: 0.8)))
             // Three or more: dots say how many, and which one the circle holds.
             if all.count > 2 {
+                // Just inside the progress ring, not on it: on the ring they
+                // made the bottom look heavier and the middle look off center.
                 PageDots(count: all.count, current: all.firstIndex(of: entry) ?? 0)
-                    .padding(.bottom, max(2, (h * 0.08).rounded()))
+                    .padding(.bottom, (h * 0.13 + 2).rounded())
                     .frame(maxHeight: .infinity, alignment: .bottom)
             }
         }
@@ -649,12 +687,35 @@ struct BubbleView: View {
                     }
                 }
             }
+        case .external:
+            // The score (or the value) with the match's minute, or the app's
+            // progress, around the edge.
+            if let activity = vm.liveActivities.item(entry.externalID) {
+                ZStack {
+                    // A live match's ring breathes, softly: live, without a
+                    // dot that could pass for the camera or recording light.
+                    LiveRing(progress: activity.progress ?? 1, tint: activity.isStale ? .secondary : .green,
+                             breathing: activity.isLiveMatch)
+                    if let short = activity.short {
+                        Text(short)
+                            .font(font)
+                            .foregroundStyle(activity.isStale ? AnyShapeStyle(.secondary) : AnyShapeStyle(Color.white))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.6)
+                            .padding(.horizontal, h * 0.14)
+                    } else {
+                        ExternalAppIcon(activity: activity, size: (h * 0.42).rounded())
+                    }
+                }
+            }
         case .live:
             // The song's progress runs around the edge, like the timer's.
             TimelineView(.periodic(from: .now, by: 1)) { context in
                 let duration = media.track?.duration ?? 0
                 let progress = duration > 0 ? media.position(at: context.date) / duration : 0
-                let size = (h * 0.56).rounded()
+                // A little smaller with the page dots below it, so they fit
+                // inside the ring.
+                let size = (h * (vm.activityEntries.count > 2 ? 0.5 : 0.56)).rounded()
                 ZStack {
                     EdgeRing(progress: progress, tint: media.accent)
                         .animation(.linear(duration: 1), value: progress)
@@ -880,6 +941,27 @@ struct LiveActivityView: View {
     }
 }
 
+/// The compact music pill's progress: the bottom few points of the pill,
+/// full width, faint.
+struct PillProgressBar: View {
+    let progress: Double
+    let color: Color
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Rectangle().fill(color.opacity(0.1))
+                Rectangle()
+                    .fill(color.opacity(0.42))
+                    .frame(width: geo.size.width * min(max(progress, 0), 1))
+                    .animation(.linear(duration: 1), value: progress)
+            }
+        }
+        .frame(height: 5.5)
+        .accessibilityHidden(true)
+    }
+}
+
 /// The playing indicator: the six bars of Apple's "waveform" SF Symbol, in
 /// its proportions and resting heights, bouncing while music plays. Paused,
 /// each bar shrinks to a round dot; playing lifts them back up.
@@ -893,77 +975,134 @@ struct EqualizerView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        WaveformBars(color: color, energy: isPlaying ? 1 : 0, moving: !reduceMotion)
-            // Pausing lets the bars settle into dots, and playing lifts them
-            // back up, instead of freezing or snapping.
-            .animation(reduceMotion ? .easeOut(duration: 0.2) : .spring(response: 0.6, dampingFraction: 0.9),
-                       value: isPlaying)
+        WaveformBars(color: color, isPlaying: isPlaying, moving: !reduceMotion)
             .accessibilityHidden(true)
     }
 }
 
-/// `energy` 0 is the row of dots (paused), 1 is full movement; anything
-/// between is a blend, which is what the play/pause animation passes through.
-private struct WaveformBars: View, Animatable {
+/// The bars as Core Animation layers. macOS moves them on its own, on the
+/// graphics side, so a song or a video playing costs Brim next to nothing:
+/// drawn by SwiftUI 20 times a second, the same bars (and the glass around
+/// them) cost about 10% of a core.
+private struct WaveformBars: NSViewRepresentable {
     let color: Color
-    var energy: Double
+    let isPlaying: Bool
     /// False with Reduce Motion: the symbol's still shape instead of movement.
     let moving: Bool
-    @Environment(\.displayScale) private var scale
 
+    func makeNSView(context: Context) -> WaveformBarsView { WaveformBarsView() }
+
+    func updateNSView(_ view: WaveformBarsView, context: Context) {
+        view.update(color: NSColor(color), playing: isPlaying, moving: moving)
+    }
+}
+
+/// `playing` false is the row of dots; true, each bar bounces between a third
+/// of its height and a little above it, around the symbol's shape, each at
+/// its own pace. Play and pause spring between the two.
+final class WaveformBarsView: NSView {
     /// The "waveform" symbol's bar heights, tallest = 1.
-    private static let rest: [Double] = [0.24, 0.6, 1.0, 0.48, 0.74, 0.31]
+    private static let rest: [CGFloat] = [0.24, 0.6, 1.0, 0.48, 0.74, 0.31]
     /// Bar width to gap, as in the symbol.
     private static let barToGap: CGFloat = 0.75
 
-    var animatableData: Double {
-        get { energy }
-        set { energy = newValue }
+    private var bars: [CALayer] = []
+    private var playing = false
+    private var moving = true
+    private var laidOut: CGSize = .zero
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        for _ in Self.rest {
+            let bar = CALayer()
+            layer?.addSublayer(bar)
+            bars.append(bar)
+        }
     }
 
-    /// Rounds to whole screen pixels, so every bar is exactly as wide as the
-    /// others and none looks thinner from landing between pixels.
-    private func px(_ value: CGFloat) -> CGFloat {
-        (value * scale).rounded() / scale
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    func update(color: NSColor, playing: Bool, moving: Bool) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        for bar in bars { bar.backgroundColor = color.cgColor }
+        CATransaction.commit()
+        guard playing != self.playing || moving != self.moving else { return }
+        self.playing = playing
+        self.moving = moving
+        apply(animated: true)
     }
 
-    var body: some View {
-        GeometryReader { geo in
-            let width = geo.size.width
-            let count = CGFloat(Self.rest.count)
-            // count bars and count - 1 gaps fill the width.
-            let unit = width / (count + (count - 1) / Self.barToGap)
-            let bar = max(2 / scale, (unit * scale).rounded(.down) / scale)
-            let gap = max(1 / scale, px(bar / Self.barToGap))
-            let used = bar * count + gap * (count - 1)
-            let inset = (((width - used) / 2) * scale).rounded(.down) / scale
-            // Heights move in steps of two pixels, so each bar stays centred
-            // on whole pixels too.
-            let step = 2 / scale
-            TimelineView(.animation(minimumInterval: 1.0 / 20.0, paused: !moving || energy < 0.001)) { context in
-                let t = context.date.timeIntervalSinceReferenceDate
-                HStack(alignment: .center, spacing: gap) {
-                    ForEach(0..<Self.rest.count, id: \.self) { i in
-                        let rest = Self.rest[i]
-                        let speed = 3.0 + Double(i % 3) * 0.9 + Double(i) * 0.25
-                        // Each bar bounces between a third of its height and a
-                        // little above it, around the symbol's shape.
-                        let live = moving
-                            ? min(1, rest * (0.35 + 0.8 * abs(sin(t * speed + Double(i) * 1.3))))
-                            : rest
-                        // Paused, each bar is exactly as tall as it is wide: a
-                        // round dot. Height (not a squash) keeps the ends round.
-                        let raw = bar + (geo.size.height * live - bar) * energy
-                        let height = max(bar, (raw / step).rounded() * step)
-                        Capsule()
-                            .fill(color)
-                            .frame(width: bar, height: height)
-                            .frame(maxHeight: .infinity)
-                    }
-                }
-                .padding(.leading, inset)
-                .frame(width: width, height: geo.size.height, alignment: .leading)
+    override func layout() {
+        super.layout()
+        guard bounds.size != laidOut else { return }
+        laidOut = bounds.size
+        apply(animated: false)
+    }
+
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        laidOut = .zero
+        needsLayout = true
+    }
+
+    /// Places the bars on whole pixels (every bar exactly as wide as the
+    /// others) and sets them moving or settling.
+    private func apply(animated: Bool) {
+        guard bounds.width > 0, bounds.height > 0 else { return }
+        let scale = window?.backingScaleFactor ?? 2
+        let width = bounds.width, height = bounds.height
+        let count = CGFloat(Self.rest.count)
+        let unit = width / (count + (count - 1) / Self.barToGap)
+        let bar = max(2 / scale, (unit * scale).rounded(.down) / scale)
+        let gap = max(1 / scale, ((bar / Self.barToGap) * scale).rounded() / scale)
+        let used = bar * count + gap * (count - 1)
+        let inset = (((width - used) / 2) * scale).rounded(.down) / scale
+        let now = CACurrentMediaTime()
+
+        for (i, layer) in bars.enumerated() {
+            let rest = Self.rest[i]
+            let low = max(bar, height * rest * 0.35)
+            let high = max(bar, height * min(1, rest * 1.15))
+            // Paused, each bar is exactly as tall as it is wide: a round dot.
+            let target = playing ? (moving ? (low + high) / 2 : max(bar, height * rest)) : bar
+            let current = (layer.presentation() ?? layer).bounds.height
+
+            layer.removeAllAnimations()
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            layer.cornerRadius = bar / 2
+            layer.position = CGPoint(x: inset + CGFloat(i) * (bar + gap) + bar / 2, y: height / 2)
+            layer.bounds = CGRect(x: 0, y: 0, width: bar, height: target)
+            CATransaction.commit()
+
+            var settleTime: CFTimeInterval = 0
+            if animated && abs(current - target) > 0.1 {
+                let settle = CASpringAnimation(keyPath: "bounds.size.height")
+                settle.fromValue = current
+                settle.toValue = target
+                settle.mass = 1
+                settle.stiffness = 110
+                settle.damping = 19
+                settle.duration = min(settle.settlingDuration, 0.6)
+                layer.add(settle, forKey: "settle")
+                settleTime = 0.3
             }
+            guard playing && moving else { continue }
+            // Each bar at its own pace, starting from the middle of its range
+            // so it picks up from where the spring left it.
+            let speed = 3.0 + Double(i % 3) * 0.9 + Double(i) * 0.25
+            let bounce = CABasicAnimation(keyPath: "bounds.size.height")
+            bounce.fromValue = low
+            bounce.toValue = high
+            bounce.duration = Double.pi / speed / 2
+            bounce.autoreverses = true
+            bounce.repeatCount = .infinity
+            bounce.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            bounce.timeOffset = bounce.duration / 2
+            bounce.beginTime = now + settleTime
+            layer.add(bounce, forKey: "bounce")
         }
     }
 }
@@ -979,8 +1118,30 @@ struct CompactActivityRow<Leading: View, Trailing: View>: View {
     let height: CGFloat
     let layout: CompactLayout
     let showsTitle: Bool
+    /// Shorter ways to say the title, tried in order when it doesn't fit
+    /// ("MON 1 – 1 HOS" for "Montañesa 1 – 1 Hospitalet").
+    var shorter: [String] = []
     @ViewBuilder let leading: Leading
     @ViewBuilder let trailing: Trailing
+
+    @ViewBuilder
+    private var titleText: some View {
+        if shorter.isEmpty {
+            Text(title)
+                .lineLimit(1)
+        } else {
+            // The longest that fits whole; the last one truncates if even it
+            // doesn't.
+            let all = [title] + shorter
+            ViewThatFits(in: .horizontal) {
+                ForEach(Array(all.enumerated()), id: \.offset) { index, text in
+                    Text(text)
+                        .lineLimit(1)
+                        .fixedSize(horizontal: index < all.count - 1, vertical: false)
+                }
+            }
+        }
+    }
 
     var body: some View {
         if notchWidth > 0 && !showsTitle {
@@ -1009,9 +1170,8 @@ struct CompactActivityRow<Leading: View, Trailing: View>: View {
                 leading
                     .frame(width: layout.artworkSize, height: layout.artworkSize)
                 if showsTitle {
-                    Text(title)
+                    titleText
                         .font(.system(size: layout.titleSize, weight: .semibold))
-                        .lineLimit(1)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
                     Spacer(minLength: 0)
@@ -1080,10 +1240,17 @@ struct TimerActivityView: View {
             CompactActivityRow(title: paused ? "\(kind.title) Paused" : kind.title,
                                notchWidth: notchWidth, height: height, layout: layout,
                                showsTitle: showsTitle) {
+                // The activity's symbol in the middle, like a download's arrow.
                 if kind == .stopwatch {
-                    StopwatchDial(elapsed: item?.elapsed(at: context.date) ?? 0, tint: kind.tint)
+                    ZStack {
+                        StopwatchDial(elapsed: item?.elapsed(at: context.date) ?? 0, tint: kind.tint)
+                        Image(systemName: kind.symbol)
+                            .font(.system(size: (layout.artworkSize * 0.42).rounded(), weight: .bold))
+                            .foregroundStyle(kind.tint)
+                    }
                 } else {
-                    ProgressRing(progress: item?.progress(at: context.date) ?? 0, tint: kind.tint)
+                    ProgressRing(progress: item?.progress(at: context.date) ?? 0, tint: kind.tint,
+                                 symbol: kind.symbol)
                 }
             } trailing: {
                 Text(item?.display(at: context.date) ?? "0:00")
@@ -1238,6 +1405,8 @@ private func reminderWhen(_ minutes: Double, short: Bool) -> String {
     if minutes > 0.5 { return short ? "\(Int(minutes.rounded(.up)))m" : "in \(Int(minutes.rounded(.up))) min" }
     if minutes > -1 { return "Now" }
     let late = Int((-minutes).rounded())
+    if late >= 24 * 60 { return short ? "\(late / 1440)d" : "\(late / 1440) d ago" }
+    if late >= 60 { return short ? "\(late / 60)h" : "\(late / 60) h ago" }
     return short ? "\(late)m" : "\(late) min ago"
 }
 
@@ -1255,8 +1424,10 @@ struct ReminderActivityView: View {
                            layout: layout, showsTitle: showsTitle) {
             ReminderIcon()
         } trailing: {
+            // Overdue in red, like the Reminders app.
             Text(reminderWhen(minutes, short: !showsTitle))
-                .foregroundStyle(minutes > 0.5 ? HierarchicalShapeStyle.secondary : HierarchicalShapeStyle.primary)
+                .foregroundStyle(minutes > 0.5 ? AnyShapeStyle(HierarchicalShapeStyle.secondary)
+                                 : minutes < -1 ? AnyShapeStyle(Color.red) : AnyShapeStyle(HierarchicalShapeStyle.primary))
         }
     }
 }
@@ -1282,6 +1453,8 @@ struct ReminderRow: View {
     let reminder: ReminderMonitor.Item
     let minutes: Double
     let onDone: () -> Void
+    /// Hides it in Brim (it stays open in Reminders).
+    let onDismiss: () -> Void
 
     var body: some View {
         HStack(spacing: 8) {
@@ -1308,6 +1481,9 @@ struct ReminderRow: View {
                     .contentShape(Capsule())
             }
             .buttonStyle(PressStyle())
+            SmallIconButton(symbol: "xmark", action: onDismiss)
+                .accessibilityLabel("Hide this reminder")
+                .help("Hide in Brim (it stays in Reminders)")
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
@@ -1342,6 +1518,9 @@ struct IdleClockView: View {
     var showsClock = true
     var weather: WeatherMonitor.Now? = nil
     var keepsAwake = false
+    /// Beside a real notch: the camera housing (plus clearance) in the
+    /// middle, never drawn on. 0 for the island.
+    var cameraGap: CGFloat = 0
 
     /// Keep Awake's cup. It pops in from small, slightly blurred.
     private func cup(size: CGFloat) -> some View {
@@ -1386,6 +1565,47 @@ struct IdleClockView: View {
     }
 
     var body: some View {
+        if cameraGap > 0 {
+            besideNotch
+        } else {
+            inIsland
+        }
+    }
+
+    /// Beside a notch: the time in the left wing; the cup and the weather in
+    /// the right one (the sky on top of the temperature while the cup is
+    /// there, so they fit). The time has no AM/PM, to fit its wing.
+    private var besideNotch: some View {
+        TimelineView(.everyMinute) { context in
+            let inset = (height * 0.36).rounded()
+            HStack(spacing: 0) {
+                ZStack(alignment: .leading) {
+                    if showsClock {
+                        Text(context.date, format: .dateTime.hour(.defaultDigits(amPM: .omitted)).minute())
+                            .font(.system(size: fontSize, weight: .semibold).monospacedDigit())
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                    }
+                }
+                .padding(.leading, inset)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                Color.clear
+                    .frame(width: cameraGap)
+                HStack(spacing: (fontSize * 0.4).rounded()) {
+                    if keepsAwake { cup(size: (fontSize * 0.8).rounded()) }
+                    if let weather { weatherView(weather, stacked: keepsAwake) }
+                }
+                .padding(.trailing, inset)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+            }
+            .animation(.spring(response: 0.5, dampingFraction: 0.72), value: keepsAwake)
+            .animation(.easeInOut(duration: 0.3), value: weather)
+        }
+        .frame(height: height)
+    }
+
+    private var inIsland: some View {
         TimelineView(.everyMinute) { context in
             // The clock is the biggest. With Keep Awake on it moves to the
             // exact middle, the cup on its left and the weather on its right;
@@ -1778,13 +1998,20 @@ struct ExpandedView: View {
                     Color.clear
                         .frame(width: vm.cameraGap)
                     HStack(spacing: 6) {
+                        // Just right of the camera, where they are when the
+                        // panel is closed.
+                        privacyDots
+                            .padding(.leading, 2)
+                        Spacer(minLength: 8)
                         notificationsControls
                     }
                     .frame(maxWidth: .infinity, alignment: .trailing)
                 }
                 .frame(height: vm.closedSize.height)
                 HStack(spacing: 6) {
-                    shortcutButtons
+                    // A menu sliding out of a button needs the row: the
+                    // Shortcuts step aside until it folds away.
+                    if ui.openMenu == nil { shortcutButtons }
                     Spacer(minLength: 12)
                         .layoutPriority(-1)
                     toolButtons
@@ -1796,15 +2023,33 @@ struct ExpandedView: View {
         } else {
             HStack(spacing: 6) {
                 nowPlayingLabel
-                shortcutButtons
+                // While a menu slides out of a button (the timer's presets,
+                // brightness), the Shortcuts and the notification count and
+                // Clear step aside, so the row never runs past the panel.
+                if ui.openMenu == nil { shortcutButtons }
                 Spacer(minLength: 12)
                     .layoutPriority(-1)
+                // The island keeps its own dots at the top center, open or
+                // closed, so only a drawn notch puts them in this row.
+                if !vm.isIsland {
+                    privacyDots
+                        .padding(.trailing, 4)
+                }
                 toolButtons
-                notificationsControls
+                if ui.openMenu == nil { notificationsControls }
             }
             .font(.system(size: 11, weight: .medium))
             .foregroundStyle(.secondary)
         }
+    }
+
+    /// The camera and microphone dots, as an item in the header row (no
+    /// width when neither is on).
+    private var privacyDots: some View {
+        PrivacyDots(camera: vm.showPrivacyDots && vm.privacy.cameraInUse,
+                    microphone: vm.showPrivacyDots && vm.privacy.microphoneInUse)
+            .animation(.easeOut(duration: 0.2), value: vm.privacy.cameraInUse)
+            .animation(.easeOut(duration: 0.2), value: vm.privacy.microphoneInUse)
     }
 
     @ViewBuilder
@@ -1997,14 +2242,14 @@ struct ExpandedView: View {
                         onMute: { vm.calls.toggleMute() }, onOpen: { vm.calls.openApp() })
             }
             if let reminder = vm.upcomingReminder {
-                ReminderRow(reminder: reminder, minutes: vm.reminders.minutesUntil(reminder)) {
-                    vm.reminders.complete(reminder)
-                }
+                ReminderRow(reminder: reminder, minutes: vm.reminders.minutesUntil(reminder),
+                            onDone: { vm.reminders.complete(reminder) },
+                            onDismiss: { withAnimation(.spring(response: 0.35, dampingFraction: 0.9)) { vm.reminders.dismiss(reminder) } })
             }
             if vm.showDownloads, let download = vm.downloads.active {
                 DownloadRow(download: download)
             }
-            NotificationListView(alerts: alerts)
+            NotificationListView(alerts: alerts, liveActivities: vm.liveActivities)
         }
     }
 }
@@ -2723,6 +2968,9 @@ struct AlertGroup: Identifiable {
 
 struct NotificationListView: View {
     let alerts: AlertCenter
+    /// Other apps' Live Activities sit at the top of the list and scroll
+    /// with the notifications, so they never crowd them out.
+    let liveActivities: LiveActivityMonitor
     @Environment(NotchUIState.self) private var ui
 
     private var groups: [AlertGroup] {
@@ -2741,7 +2989,7 @@ struct NotificationListView: View {
     }
 
     var body: some View {
-        if alerts.history.isEmpty {
+        if alerts.history.isEmpty && liveActivities.items.isEmpty {
             // Shown only when it fits whole: with timers, calls or meetings
             // filling the column it steps aside instead of being cut off.
             ViewThatFits(in: .vertical) {
@@ -2760,6 +3008,17 @@ struct NotificationListView: View {
         } else {
             ScrollView(.vertical, showsIndicators: false) {
                 LazyVStack(spacing: 2) {
+                    ForEach(liveActivities.items) { activity in
+                        ExternalActivityCard(activity: activity,
+                                             onOpen: { liveActivities.open(activity.id) },
+                                             onDismiss: {
+                                                 withAnimation(.spring(response: 0.35, dampingFraction: 0.9)) {
+                                                     liveActivities.dismiss(activity.id)
+                                                 }
+                                             })
+                            .padding(.bottom, 4)
+                            .transition(.opacity.combined(with: .scale(scale: 0.95, anchor: .top)))
+                    }
                     ForEach(groups) { group in
                         if group.alerts.count == 1, let alert = group.alerts.first {
                             row(alert)
@@ -3046,4 +3305,256 @@ extension Date {
 private func timeString(_ seconds: Double) -> String {
     let total = max(0, Int(seconds.rounded()))
     return String(format: "%d:%02d", total / 60, total % 60)
+}
+
+// MARK: - Other apps' Live Activities
+
+/// The app's icon when it's on this Mac; otherwise (an iPhone app) its
+/// initial on a tile.
+struct ExternalAppIcon: View {
+    let activity: ExternalActivity
+    let size: CGFloat
+
+    var body: some View {
+        if let icon = activity.icon {
+            // A Mac app's icon comes shaped already; an iPhone app's is a
+            // plain square, so it gets iOS's rounded corners (about 22.4% of
+            // the side, on Apple's continuous curve).
+            Image(nsImage: icon)
+                .resizable()
+                .interpolation(.high)
+                .frame(width: size, height: size)
+                .clipShape(RoundedRectangle(cornerRadius: activity.iconIsShaped ? 0 : size * 0.2237, style: .continuous))
+        } else {
+            RoundedRectangle(cornerRadius: size * 0.225, style: .continuous)
+                .fill(LinearGradient(colors: [Self.tint(for: activity.bundleID).opacity(0.95), Self.tint(for: activity.bundleID).opacity(0.7)],
+                                     startPoint: .top, endPoint: .bottom))
+                .overlay(
+                    Text(String(activity.appName.prefix(1)).uppercased())
+                        .font(.system(size: size * 0.55, weight: .bold, design: .rounded))
+                        .foregroundStyle(Color.white)
+                )
+                .frame(width: size, height: size)
+        }
+    }
+
+    /// A steady colour per app.
+    static func tint(for bundleID: String) -> Color {
+        let colors: [Color] = [.green, .blue, .orange, .pink, .purple, .teal, .indigo, .red]
+        let hash = bundleID.unicodeScalars.reduce(0) { ($0 &* 31 &+ Int($1.value)) & 0xFFFF }
+        return colors[hash % colors.count]
+    }
+}
+
+/// In the pill: the app's icon, its line ("Inter 2 – 1 Milan") and the live
+/// value (the minute, in green). Dimmed with a clock once it's out of date.
+struct ExternalActivityView: View {
+    let activity: ExternalActivity
+    let notchWidth: CGFloat
+    let height: CGFloat
+    let layout: CompactLayout
+    let showsTitle: Bool
+
+    var body: some View {
+        CompactActivityRow(title: activity.title, notchWidth: notchWidth, height: height,
+                           layout: layout, showsTitle: showsTitle, shorter: activity.shorterTitles) {
+            ExternalAppIcon(activity: activity, size: layout.artworkSize)
+        } trailing: {
+            HStack(spacing: 4) {
+                if activity.isStale {
+                    Image(systemName: "clock")
+                        .font(.system(size: layout.titleSize * 0.8, weight: .semibold))
+                }
+                // Beside a notch there's no room for the title: the score
+                // comes in front of the minute.
+                if !showsTitle, case .match = activity.display, let short = activity.short {
+                    Text(short).foregroundStyle(activity.isStale ? AnyShapeStyle(.secondary) : AnyShapeStyle(Color.white))
+                }
+                if case .match(let match) = activity.display, let minute = match.minute {
+                    // A live match: the minute's tick blinks, like a scoreboard.
+                    LiveMinute(minute: minute, live: !activity.isStale)
+                } else if let value = activity.value {
+                    Text(value)
+                        .foregroundStyle(activity.isStale ? AnyShapeStyle(.secondary) : AnyShapeStyle(Color.green))
+                        .contentTransition(.numericText())
+                }
+            }
+            .foregroundStyle(.secondary)
+        }
+        .opacity(activity.isStale ? 0.6 : 1)
+        .animation(.easeInOut(duration: 0.3), value: activity.isStale)
+        .animation(.spring(response: 0.4, dampingFraction: 0.85), value: activity.value)
+    }
+}
+
+/// In the panel: a card for a match (competition, both teams with their
+/// score and red cards, the minute) or a row for any other app. A click opens
+/// the app, or iPhone Mirroring for an iPhone app.
+struct ExternalActivityCard: View {
+    let activity: ExternalActivity
+    let onOpen: () -> Void
+    /// Hides it in Brim until it ends (macOS keeps showing it).
+    let onDismiss: () -> Void
+    @Environment(NotchUIState.self) private var ui
+
+    private var hovering: Bool { ui.hoveredLiveActivity == activity.id }
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            Group {
+                switch activity.display {
+                case .match(let match): matchCard(match)
+                case .general(let general): generalRow(general)
+                }
+            }
+            .padding(.horizontal, 9)
+            .padding(.vertical, 7)
+            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.primary.opacity(0.06)))
+            .opacity(activity.isStale ? 0.6 : 1)
+            .contentShape(Rectangle())
+            .onTapGesture(perform: onOpen)
+            .help(activity.fromiPhone ? "Open in iPhone Mirroring" : "Open \(activity.appName)")
+            .contextMenu {
+                Button("Open \(activity.fromiPhone ? "in iPhone Mirroring" : activity.appName)", action: onOpen)
+                Button("Hide This Live Activity", action: onDismiss)
+            }
+            // The same x as a notification's, on hover.
+            if hovering {
+                Button(action: onDismiss) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 7.5, weight: .bold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 15, height: 15)
+                        .background(Circle().fill(.regularMaterial))
+                        .overlay(Circle().stroke(Color.primary.opacity(0.12), lineWidth: 0.5))
+                        .contentShape(Circle())
+                }
+                .buttonStyle(PressStyle())
+                .accessibilityLabel("Hide this Live Activity")
+                .offset(x: 1, y: -1)
+                .transition(.opacity.combined(with: .scale(scale: 0.6)))
+            }
+        }
+        .animation(.easeOut(duration: 0.12), value: hovering)
+        .onHover { inside in
+            if inside { ui.hoveredLiveActivity = activity.id }
+            else if ui.hoveredLiveActivity == activity.id { ui.hoveredLiveActivity = nil }
+        }
+    }
+
+    private var minuteColor: AnyShapeStyle {
+        activity.isStale ? AnyShapeStyle(.secondary) : AnyShapeStyle(Color.green)
+    }
+
+    private func matchCard(_ match: ExternalActivity.Match) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 5) {
+                ExternalAppIcon(activity: activity, size: 14)
+                // The icon says which app; the line is the competition, shrunk
+                // a little rather than cut when it's long.
+                Text(match.competition ?? activity.appName)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+                Spacer(minLength: 4)
+                if activity.isStale {
+                    Image(systemName: "clock").font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
+                }
+                if let minute = match.minute {
+                    LiveMinute(minute: minute, live: !activity.isStale)
+                        .font(.system(size: 10.5, weight: .bold).monospacedDigit())
+                }
+            }
+            team(match.home, match.homeScore, reds: match.homeRed)
+            team(match.away, match.awayScore, reds: match.awayRed)
+        }
+    }
+
+    private func team(_ name: String, _ score: Int, reds: Int) -> some View {
+        HStack(spacing: 4) {
+            Text(name)
+                .font(.system(size: 11.5, weight: .semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+            ForEach(0..<min(reds, 3), id: \.self) { _ in
+                RoundedRectangle(cornerRadius: 1, style: .continuous)
+                    .fill(Color.red)
+                    .frame(width: 5, height: 7)
+            }
+            Spacer(minLength: 4)
+            Text("\(score)")
+                .font(.system(size: 13, weight: .heavy).monospacedDigit())
+                .contentTransition(.numericText())
+        }
+    }
+
+    private func generalRow(_ general: ExternalActivity.General) -> some View {
+        HStack(spacing: 8) {
+            ExternalAppIcon(activity: activity, size: 22)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(general.title)
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.85)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(general.subtitle ?? activity.appName)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            Spacer(minLength: 4)
+            if activity.isStale {
+                Image(systemName: "clock").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
+            }
+            if let value = general.value {
+                Text(value)
+                    .font(.system(size: 12, weight: .semibold).monospacedDigit())
+                    .foregroundStyle(minuteColor)
+            }
+        }
+    }
+}
+
+/// "61'" with the tick blinking while the match is live (still with Reduce
+/// Motion, or once the data is out of date).
+struct LiveMinute: View {
+    let minute: Int
+    let live: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Text("\(minute)")
+                .contentTransition(.numericText())
+            if live && !reduceMotion {
+                PhaseAnimator([true, false]) { on in
+                    Text("'").opacity(on ? 1 : 0.12)
+                } animation: { _ in .easeInOut(duration: 0.55) }
+            } else {
+                Text("'")
+            }
+        }
+        .foregroundStyle(live ? AnyShapeStyle(Color.green) : AnyShapeStyle(.secondary))
+        .animation(.spring(response: 0.4, dampingFraction: 0.85), value: minute)
+    }
+}
+
+/// The circle's ring for another app's activity; a live match's breathes.
+struct LiveRing: View {
+    let progress: Double
+    let tint: Color
+    let breathing: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        if breathing && !reduceMotion {
+            PhaseAnimator([true, false]) { bright in
+                EdgeRing(progress: progress, tint: tint).opacity(bright ? 1 : 0.45)
+            } animation: { _ in .easeInOut(duration: 1.3) }
+        } else {
+            EdgeRing(progress: progress, tint: tint)
+        }
+    }
 }

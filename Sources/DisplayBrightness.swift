@@ -436,3 +436,68 @@ final class BrightnessHotKeys: @unchecked Sendable {
         handler = nil
     }
 }
+
+/// The MacBook's own screen: a banner when its brightness changes, from the
+/// brightness keys or Control Center's slider. macOS posts nothing Brim can
+/// listen to, so it reads the level (the same private DisplayServices call
+/// Control Center uses) three times a second; a jump of about a key step
+/// means you changed it. Auto-Brightness moves in tiny steps and stays
+/// quiet. Not read while the Mac is locked or dark.
+@MainActor
+final class BuiltInBrightnessWatcher {
+    var onChange: ((Double, String) -> Void)?
+
+    private var native: NativeBrightness?
+    private var name = "Display"
+    private var last: Double?
+    private var timer: Timer?
+    private var observer: NSObjectProtocol?
+
+    func start() {
+        guard timer == nil else { return }
+        find()
+        observer = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.find() }
+        }
+        let t = Timer(timeInterval: 0.33, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.check() }
+        }
+        t.tolerance = 0.1
+        RunLoop.main.add(t, forMode: .common)
+        timer = t
+    }
+
+    func stop() {
+        timer?.invalidate()
+        timer = nil
+        if let observer { NotificationCenter.default.removeObserver(observer) }
+        observer = nil
+        native = nil
+        last = nil
+    }
+
+    /// The built-in screen, if it's on (not with the lid closed).
+    private func find() {
+        let screen = NSScreen.screens.first { screen in
+            let id = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value
+            return id.map { CGDisplayIsBuiltin($0) != 0 } ?? false
+        }
+        guard let screen, let id = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value else {
+            native = nil
+            last = nil
+            return
+        }
+        if native?.display != id { native = NativeBrightness(display: id); last = nil }
+        name = screen.localizedName
+    }
+
+    private func check() {
+        guard let native, !QuietState.shared.isQuiet, let value = native.read() else { last = nil; return }
+        defer { last = value }
+        guard let last else { return }
+        // A brightness key moves a sixteenth (0.0625); Auto-Brightness
+        // drifts far less than that between two reads.
+        if abs(value - last) >= 0.03 { onChange?(value, name) }
+    }
+}

@@ -36,6 +36,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var volume: VolumeMonitor!
     private var microphone: MicrophoneMonitor!
     private var brightness: DisplayBrightness!
+    private let builtInBrightness = BuiltInBrightnessWatcher()
     private var accessoryBatteries: AccessoryBatteryMonitor?
     private let focus = FocusMonitor()
     private var settings: SettingsWindowController!
@@ -139,6 +140,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                          duration: 8, action: .openUpdate))
         }
         Updater.shared.start()
+
+        vm.liveActivities.onAlert = { [weak self] alert in self?.alerts.post(alert) }
+        vm.liveActivities.start()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -155,6 +159,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             switch action {
             case .startFocus: self?.timer.startFocus()
             case .openUpdate: self?.settings.show(pane: .about)
+            case .openLiveActivity(let id): self?.vm.liveActivities.open(id)
             }
         }
         timer.onFinish = { [weak self] kind in
@@ -216,6 +221,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self.alerts.postLive(.brightnessBanner(level, step: self.brightness.stepLevel,
                                                    display: self.brightness.displayName))
         }
+        // The MacBook's own screen: its brightness keys get the same banner.
+        builtInBrightness.onChange = { [weak self] level, name in
+            guard let self, self.vm.showBrightness else { return }
+            self.alerts.postLive(.brightnessBanner(level, step: Int((level * Double(DisplayBrightness.steps)).rounded()),
+                                                   display: name))
+        }
+        builtInBrightness.start()
         // Teleprompter: banners wait while it reads, and its shortcuts.
         vm.prompter.onActiveChange = { [weak self] active in
             self?.alerts.holdBanners(active)

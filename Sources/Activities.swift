@@ -337,9 +337,9 @@ final class CalendarMonitor {
 // MARK: - Reminders
 
 /// Reminders from the Reminders app that are due soon (with a time, not just
-/// a day): from 15 minutes before until you tick them off, for up to an hour
-/// after. The Reminders app's own alert at the due time comes through as a
-/// normal notification.
+/// a day): from 15 minutes before until you tick them off or hide them, even
+/// hours late (looking back a week). The Reminders app's own alert at the due
+/// time comes through as a normal notification.
 @MainActor
 @Observable
 final class ReminderMonitor {
@@ -355,11 +355,16 @@ final class ReminderMonitor {
     private(set) var lastCheck = Date()
     private(set) var isAuthorized = false
 
-    /// How early a reminder appears, and how long an overdue one stays.
+    /// How early a reminder appears. Once due it stays until you tick it
+    /// off or hide it (it might matter), looking back up to a week.
     static let lead: TimeInterval = 15 * 60
-    static let overdueFor: TimeInterval = 60 * 60
+    static let overdueFor: TimeInterval = 7 * 24 * 60 * 60
 
-    private let store = EKEventStore()
+    /// Reminders you hid in Brim (still open in the Reminders app).
+    @ObservationIgnored private var dismissed: [String] =
+        UserDefaults.standard.stringArray(forKey: "remindersDismissed") ?? []
+
+    private var store = EKEventStore()
     @ObservationIgnored private var timer: Timer?
     @ObservationIgnored private var observer: NSObjectProtocol?
 
@@ -374,7 +379,11 @@ final class ReminderMonitor {
             guard let self else { return }
             let granted = (try? await self.store.requestFullAccessToReminders()) ?? false
             self.isAuthorized = granted
+            Diag.event("Reminders: access \(granted ? "granted" : "not granted") (status \(EKEventStore.authorizationStatus(for: .reminder).rawValue))")
             guard granted else { return }
+            // A store made before access was granted can keep returning
+            // nothing: start from a fresh one.
+            self.store = EKEventStore()
             self.refresh()
             self.observer = NotificationCenter.default.addObserver(
                 forName: .EKEventStoreChanged, object: self.store, queue: .main
@@ -402,6 +411,15 @@ final class ReminderMonitor {
         item.due.timeIntervalSince(lastCheck) / 60
     }
 
+    /// Hides it in Brim; it stays open in the Reminders app.
+    func dismiss(_ item: Item) {
+        dismissed.append(item.id)
+        if dismissed.count > 200 { dismissed.removeFirst(dismissed.count - 200) }
+        UserDefaults.standard.set(dismissed, forKey: "remindersDismissed")
+        if next?.id == item.id { next = nil }
+        refresh()
+    }
+
     /// Ticks the reminder off in the Reminders app.
     func complete(_ item: Item) {
         guard let reminder = store.calendarItem(withIdentifier: item.id) as? EKReminder else { return }
@@ -421,6 +439,8 @@ final class ReminderMonitor {
             withDueDateStarting: now.addingTimeInterval(-Self.overdueFor),
             ending: now.addingTimeInterval(Self.lead), calendars: nil)
         store.fetchReminders(matching: predicate) { [weak self] reminders in
+            Diag.count("reminders.fetch")
+            if reminders == nil { Diag.event("Reminders: the fetch failed") }
             // Only reminders with a time of day; "today" alone isn't "soon".
             let items: [Item] = (reminders ?? []).compactMap { reminder in
                 guard let parts = reminder.dueDateComponents, parts.hour != nil,
@@ -435,8 +455,11 @@ final class ReminderMonitor {
                 MainActor.assumeIsolated {
                     guard let self else { return }
                     self.lastCheck = now
-                    let first = items.first
-                    if self.next != first { self.next = first }
+                    let first = items.first { !self.dismissed.contains($0.id) }
+                    if self.next != first {
+                        self.next = first
+                        Diag.event(first == nil ? "Reminders: none due" : "Reminders: one due (\(items.count) in the window)")
+                    }
                 }
             }
         }

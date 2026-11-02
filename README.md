@@ -9,15 +9,13 @@
 
 # Brim
 
-[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/Z1T829JCS8)
-
 **A Dynamic Island for your Mac.** Notifications, music, timers, a teleprompter and the small things your Mac tells you, in one black pill that lives in the notch or floats at the top of any display.
 
 Brim is free and open source. It gets updates often, and new features come from the people who use it: if there's something you'd like it to do, [ask for it](https://github.com/martinsrepos/Brim/issues/new?template=feature_request.yml).
 
 <p align="center"><img src="docs/brim-demo.gif" alt="The pill turning into music, a timer, banners, the panel and the teleprompter" width="720"></p>
 
-https://github.com/user-attachments/assets/9db3ae34-746a-4f33-aaa2-a119ff99150d
+<p align="center"><a href="docs/brim-film-16x9.mp4"><b>Watch the one minute film</b></a></p>
 
 ## What it does
 
@@ -39,20 +37,22 @@ https://github.com/user-attachments/assets/9db3ae34-746a-4f33-aaa2-a119ff99150d
 **Music**
 - Now playing from any app, browsers included
 - Media controls with seek, shuffle, repeat and favourite
+- A subtle progress line along the pill
 - Song changes that swipe, play and pause that morph
 
 **Live activities**
+- Live Activities from your iPhone and other apps (macOS 27), with match scores that update live
 - Two things at once, like iPhone
 - Timers, stopwatches and Focus rounds
 - Upcoming meetings with Join
 - Calls with Mute
-- Reminders with Done
+- Reminders with Done, kept in view until you tick them off
 - Downloads and AirDrop
 
 **System banners**
 - Volume
 - Microphone mute
-- Monitor brightness
+- Monitor brightness, and the MacBook's own screen
 - Keyboard backlight, for Logitech MX Keys
 - Charger, battery and charge alert (MacBooks)
 - Bluetooth accessories connecting
@@ -96,8 +96,6 @@ Requires macOS 14 or later. Liquid Glass needs macOS 26.
 
 **Updating:** Brim checks for new versions by itself. When one is out, Settings › About shows **Update**: one click and Brim installs it and opens again, keeping your settings and permissions. (Coming from 1.0 or 1.0.1? Install 1.1 from the DMG once; from then on it updates itself.)
 
-[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/Z1T829JCS8)
-
 ## Privacy
 
 Brim asks for each permission only when a feature first needs it, and works without the ones you skip. No account, no analytics. It only goes online for two things: the weather, which gets your city's coordinates and nothing else, and a check with GitHub for a new version once a day, which sends nothing about you (you can turn it off). Notifications are read on your Mac, and Follow My Voice uses on-device speech recognition only. Details in [SECURITY.md](SECURITY.md).
@@ -121,6 +119,7 @@ xcode-select --install
 ## More
 
 - [The full guide](docs/GUIDE.md): every feature and setting, permissions, troubleshooting, how it works, limitations
+- [Roadmap](docs/ROADMAP.md): what's coming next
 - [Security policy](SECURITY.md)
 - Credits: weather by Open-Meteo and MET Norway (CC BY 4.0); the Now Playing helper is mediaremote-adapter (BSD 3-Clause); the lock screen layer follows SkyLightWindow (MIT).
 

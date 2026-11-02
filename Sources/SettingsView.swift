@@ -182,6 +182,11 @@ struct SettingsView: View {
         }
         .frame(minWidth: 720, idealWidth: 740, minHeight: 540, idealHeight: 600)
         .onDisappear { vm.isPreviewingExpanded = false }
+        // "Keep Open While Adjusting" belongs to Appearance: leaving the
+        // pane lets the panel close.
+        .onChange(of: pane) { _, newPane in
+            if newPane != .appearance { vm.isPreviewingExpanded = false }
+        }
     }
 
     /// The card at the top of each pane, like the one in System Settings.
@@ -413,13 +418,20 @@ struct SettingsView: View {
                         .lineLimit(1)
                 }
             }
+            if !vm.isIsland {
+                Toggle(isOn: Binding(get: { vm.idleBesideNotch }, set: { vm.setIdleBesideNotch($0) })) {
+                    RowLabel("Show Clock and Weather Beside the Notch", symbol: "laptopcomputer", color: .gray)
+                }
+            }
             Toggle(isOn: Binding(get: { vm.showPrivacyDots }, set: { vm.setShowPrivacyDots($0) })) {
                 RowLabel("Camera and Microphone Dots", symbol: "hand.raised.fill", color: .blue)
             }
         } header: {
             Text("In the Pill")
         } footer: {
-            footnote("Weather comes from Open-Meteo for the city you choose.")
+            footnote(vm.isIsland
+                     ? "Weather comes from Open-Meteo for the city you choose."
+                     : "In the notch style the clock and weather only show when you turn on Show Beside the Notch: the time goes in a wing left of the camera and the weather in one on the right, covering a little of the menu bar while the notch is idle. Weather comes from Open-Meteo for the city you choose.")
         }
 
         Section {
@@ -439,6 +451,24 @@ struct SettingsView: View {
             Text("Activities")
         } footer: {
             footnote("Meetings show 15 minutes before they start, with a Join button for Zoom, Meet, Teams and FaceTime links. Reminders with a time show 15 minutes before they're due. Calls show while FaceTime, Zoom, Teams, Webex or Skype is on a call, with a mute button.")
+        }
+
+        Section {
+            Toggle(isOn: Binding(get: { vm.liveActivities.isEnabled }, set: { vm.liveActivities.setEnabled($0) })) {
+                RowLabel("Live Activities from Other Apps", symbol: "dot.radiowaves.left.and.right", color: .green)
+            }
+            if vm.liveActivities.isEnabled {
+                Toggle(isOn: Binding(get: { vm.liveActivities.bannersEnabled }, set: { vm.liveActivities.setBannersEnabled($0) })) {
+                    RowLabel("Banners for Important Updates", symbol: "bell.badge.fill", color: .red)
+                }
+                LabeledContent("Now") {
+                    Text(liveActivitiesStatus).foregroundStyle(.secondary).lineLimit(1)
+                }
+            }
+        } header: {
+            Text("From Other Apps and Your iPhone")
+        } footer: {
+            footnote("The Live Activities macOS shows in the menu bar, from your iPhone and from apps on this Mac, also show in the island, most relevant first. Matches get their own layout; a goal or a red card, or an update the app marks as important, drops down as a banner. A click opens the app, or iPhone Mirroring for an iPhone app. Read on your Mac only, with Full Disk Access, from a list macOS keeps privately: a macOS update can change it. To see them only in Brim, turn the app off for the menu bar in System Settings.")
         }
 
         Section {
@@ -812,6 +842,13 @@ struct SettingsView: View {
             return "Brim \(Updater.currentVersion) is the latest version.\(checked)"
         }
         return "Brim asks GitHub for the latest release and sends nothing about you. With automatic checks on, it looks once a day.\(checked)"
+    }
+
+    private var liveActivitiesStatus: String {
+        guard LiveActivityMonitor.isAvailable else { return "Not available on this macOS" }
+        let items = vm.liveActivities.items
+        if items.isEmpty { return "None right now" }
+        return items.map(\.appName).joined(separator: ", ")
     }
 
     /// One credit: what, who, and links (and the license file, when one ships).

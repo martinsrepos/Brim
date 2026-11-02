@@ -13,6 +13,7 @@ enum NotchMode: Hashable {
     case download   // a file is downloading
     case reminder   // a reminder is due soon
     case call       // a call is going on (FaceTime, WhatsApp, Zoom...)
+    case external   // another app's Live Activity (a match, a delivery...)
     case locked     // screen locked: a lock, like iPhone
     case unlocking  // the lock opens for a moment after you unlock
     case banner     // a notification is showing
@@ -32,7 +33,9 @@ struct NotchRadii: Equatable {
 final class NotchViewModel {
     /// Transparent window hosting the island. Large enough for the biggest
     /// allowed panel plus its shadow.
-    static let canvas = CGSize(width: 860, height: 440)
+    /// The island's window: room for the widest panel (900) plus a notch's
+    /// flared top corners and its shadow, so nothing is cut at the edges.
+    static let canvas = CGSize(width: 1000, height: 440)
 
     /// Without a notch, the island floats just below the top edge, like iPhone.
     static let defaultIslandOffset: CGFloat = 10
@@ -141,6 +144,8 @@ final class NotchViewModel {
     let editors = ScriptEditorWindows()
     /// Files dropped on the island, and your Shortcuts buttons.
     let shelf = FileShelf()
+    /// Other apps' Live Activities, from this Mac and the iPhone.
+    let liveActivities = LiveActivityMonitor()
     let shortcuts = ShortcutButtons()
 
     // Feature switches (Settings).
@@ -151,6 +156,9 @@ final class NotchViewModel {
     private(set) var showReminders: Bool
     private(set) var showCalls: Bool
     private(set) var showWeather: Bool
+    /// The idle clock and weather beside a notch too, in wings either side of
+    /// the camera. Off by default: the wings cover part of the menu bar.
+    private(set) var idleBesideNotch: Bool
     /// Logitech devices: the keyboard backlight banner and battery banners.
     private(set) var showLogitech: Bool
     /// Banner when the output volume changes.
@@ -191,6 +199,7 @@ final class NotchViewModel {
         self.showReminders = defaults.object(forKey: "showReminders") as? Bool ?? true
         self.showCalls = defaults.object(forKey: "showCalls") as? Bool ?? true
         self.showWeather = defaults.object(forKey: "showWeather") as? Bool ?? true
+        self.idleBesideNotch = defaults.bool(forKey: "idleBesideNotch")
         self.showLogitech = defaults.object(forKey: "showKeyboardBacklight") as? Bool ?? true
         self.showVolume = defaults.object(forKey: "showVolume") as? Bool ?? true
         self.showMicrophoneMute = defaults.object(forKey: "showMicrophoneMute") as? Bool ?? true
@@ -371,9 +380,14 @@ final class NotchViewModel {
     }
 
     /// The idle pill shows something (clock, weather or the Keep Awake cup).
+    /// A notch only when you ask for it (Settings > Live Activities).
     var showsIdleContent: Bool {
-        isIsland && (showClock || keepAwake.isOn || (showWeather && weather.now != nil))
+        (isIsland || idleBesideNotch) && (showClock || keepAwake.isOn || (showWeather && weather.now != nil))
     }
+
+    /// Beside a real notch the camera is in the middle, so the idle clock goes
+    /// in a wing on its left and the weather in one on its right.
+    var idleUsesWings: Bool { !isIsland && hasNotch }
 
     // MARK: - Sounds
 
@@ -470,6 +484,11 @@ final class NotchViewModel {
         UserDefaults.standard.set(on, forKey: "showClock")
     }
 
+    func setIdleBesideNotch(_ on: Bool) {
+        idleBesideNotch = on
+        UserDefaults.standard.set(on, forKey: "idleBesideNotch")
+    }
+
     func setShowCalendar(_ on: Bool) {
         showCalendar = on
         UserDefaults.standard.set(on, forKey: "showCalendar")
@@ -526,13 +545,20 @@ final class NotchViewModel {
         // A call comes first, like on iPhone (click the circle to swap).
         if currentCall != nil { list.append(ActivityEntry(mode: .call)) }
         if media.track != nil, !media.isDormant { list.append(ActivityEntry(mode: .live)) }
+        // A reminder that's due or overdue might matter: it comes right after
+        // the first activity (the circle, beside the music), and stays until
+        // you tick it off or hide it.
+        let reminderDue = upcomingReminder.map { reminders.minutesUntil($0) <= 0 } ?? false
+        if reminderDue { list.insert(ActivityEntry(mode: .reminder), at: min(1, list.count)) }
         // The timer ending soonest first, then the rest, newest first.
         let primaryID = timer.primary?.id
         let timers = timer.items.filter { $0.id == primaryID } + timer.items.filter { $0.id != primaryID }
         list += timers.map { ActivityEntry(mode: .timer, timerID: $0.id) }
+        // Other apps' Live Activities, most relevant first (Apple's own score).
+        list += liveActivities.items.map { ActivityEntry(mode: .external, externalID: $0.id) }
         let minutes = upcomingEvent.map { calendar.minutesUntil($0) }
         if let minutes, minutes <= 5 { list.append(ActivityEntry(mode: .event)) }
-        if upcomingReminder != nil { list.append(ActivityEntry(mode: .reminder)) }
+        if upcomingReminder != nil, !reminderDue { list.append(ActivityEntry(mode: .reminder)) }
         if showDownloads, downloads.active != nil { list.append(ActivityEntry(mode: .download)) }
         if let minutes, minutes > 5, minutes <= 15 { list.append(ActivityEntry(mode: .event)) }
         return list
@@ -562,7 +588,7 @@ final class NotchViewModel {
     func secondaryEntry(for mode: NotchMode) -> ActivityEntry? {
         guard lock.state == .unlocked else { return nil }
         switch mode {
-        case .live, .timer, .event, .download, .reminder, .call:
+        case .live, .timer, .event, .download, .reminder, .call, .external:
             let list = orderedEntries
             return list.count > 1 ? list[1] : nil
         default:
@@ -586,6 +612,7 @@ final class NotchViewModel {
 
     /// The timer the pill shows (when it shows one) and the one in the circle.
     var pillTimerID: UUID? { orderedEntries.first?.timerID }
+    var pillExternalID: String? { orderedEntries.first?.externalID }
     var circleTimerID: UUID? { secondaryEntry(for: mode)?.timerID }
 
     /// Clicking the circle brings its activity into the pill, and the pill's
@@ -744,10 +771,15 @@ final class NotchViewModel {
     func size(for mode: NotchMode) -> CGSize {
         switch mode {
         case .idle:
-            return showsIdleContent
-                ? CGSize(width: Self.idleContentWidth, height: closedSize.height)
-                : CGSize(width: closedSize.width + dotsWing * 2, height: closedSize.height)
-        case .live, .timer, .event, .download, .reminder, .call:
+            if showsIdleContent {
+                // Beside a notch: the same wings as a live activity (plus room
+                // for the camera dots when they're on).
+                return idleUsesWings
+                    ? CGSize(width: closedSize.width + (wing + dotsWing) * 2, height: closedSize.height)
+                    : CGSize(width: Self.idleContentWidth, height: closedSize.height)
+            }
+            return CGSize(width: closedSize.width + dotsWing * 2, height: closedSize.height)
+        case .live, .timer, .event, .download, .reminder, .call, .external:
             return isIsland
                 ? CGSize(width: closedSize.width + Self.liveExtraWidth, height: closedSize.height)
                 : CGSize(width: closedSize.width + wing * 2 + (notchSplit(for: mode) ? notchExtension : 0),
@@ -791,7 +823,7 @@ final class NotchViewModel {
     func radii(for mode: NotchMode) -> NotchRadii {
         if isIsland {
             switch mode {
-            case .idle, .live, .timer, .event, .download, .reminder, .call, .locked, .unlocking:
+            case .idle, .live, .timer, .event, .download, .reminder, .call, .external, .locked, .unlocking:
                 return NotchRadii(top: 0, bottom: closedSize.height / 2)
             // Banner: 38pt icon with a 17pt margin, about 9 + 17 = 26.
             case .banner:   return NotchRadii(top: 0, bottom: 26)
@@ -800,7 +832,7 @@ final class NotchViewModel {
             }
         }
         switch mode {
-        case .idle, .live, .timer, .event, .download, .reminder, .call, .locked, .unlocking:
+        case .idle, .live, .timer, .event, .download, .reminder, .call, .external, .locked, .unlocking:
             return NotchRadii(top: 6, bottom: 14)
         case .banner:   return NotchRadii(top: 12, bottom: 24)
         case .expanded: return NotchRadii(top: 18, bottom: 32)
@@ -832,7 +864,7 @@ final class NotchViewModel {
             let p = panelLayout
             return ArtworkPlacement(x: p.margin, y: p.contentTop,
                                     size: PanelLayout.artworkSize, corner: PanelLayout.artworkCorner)
-        case .idle, .timer, .event, .download, .reminder, .call, .locked, .unlocking, .banner, .prompter:
+        case .idle, .timer, .event, .download, .reminder, .call, .external, .locked, .unlocking, .banner, .prompter:
             return nil
         }
     }
@@ -920,6 +952,8 @@ extension Comparable {
 struct ActivityEntry: Hashable {
     let mode: NotchMode
     var timerID: UUID? = nil
+    /// Which Live Activity, for `.external`.
+    var externalID: String? = nil
 }
 
 enum HeaderMenu: Equatable {
@@ -954,6 +988,8 @@ final class NotchUIState {
     /// Which part of the custom time the pointer is over (0 h, 1 m, 2 s).
     var customHover: Int?
     var hoveredAlert: UUID?
+    /// The Live Activity card under the pointer (its x shows).
+    var hoveredLiveActivity: String?
     /// The last activity shown in the split-off circle.
     var bubbleEntry: ActivityEntry?
     /// The pointer is over the circle (it grows a little: it can be clicked).

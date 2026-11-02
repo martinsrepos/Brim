@@ -8,7 +8,7 @@ Everything for putting Brim on GitHub and telling people about it. Images and fi
 
 **Website:** leave empty for now, or the Releases page.
 
-**Release:** run `./build.sh dmg`, then on GitHub go to Releases › Draft a new release, tag it `v1.0`, paste the release notes below and attach `build/Brim-1.0.dmg`.
+**Release:** run `BRIM_SIGN_IDENTITY="Halo Developer" ./build.sh dmg`, then on GitHub go to Releases › Draft a new release, tag it with the version from Info.plist (for example `v1.1.0`), paste the release notes and attach `build/Brim-<version>.dmg`. See "Publishing an update" below.
 
 **Topics:** `macos` `swift` `swiftui` `dynamic-island` `notch` `menu-bar-app` `notifications` `teleprompter` `liquid-glass` `macos-app`
 

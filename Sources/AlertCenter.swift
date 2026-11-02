@@ -52,6 +52,8 @@ enum AlertAction: Equatable {
     case startFocus
     /// "Brim x.y is available": opens Settings › About.
     case openUpdate
+    /// Another app's Live Activity: open the app (or iPhone Mirroring).
+    case openLiveActivity(String)
 }
 
 /// Queues notifications, shows them one at a time, and keeps a short history
@@ -201,6 +203,7 @@ final class AlertCenter {
     }
 
     func clearHistory() {
+        ClearedNotifications.clearedAll()
         history.removeAll()
     }
 
@@ -208,6 +211,7 @@ final class AlertCenter {
     /// then the rest of the list fades out.
     func clearAllAnimated() {
         guard !history.isEmpty else { return }
+        ClearedNotifications.clearedAll()
         let first = history.prefix(6).map(\.id)
         Task { @MainActor [weak self] in
             for id in first {
@@ -223,11 +227,13 @@ final class AlertCenter {
     /// Takes one notification off Brim's list (macOS's Notification Center
     /// keeps its own copy).
     func dismiss(_ id: UUID) {
+        ClearedNotifications.dismissed(history.filter { $0.id == id })
         history.removeAll { $0.id == id }
     }
 
     func dismiss(_ ids: [UUID]) {
         let set = Set(ids)
+        ClearedNotifications.dismissed(history.filter { set.contains($0.id) })
         history.removeAll { set.contains($0.id) }
     }
 
@@ -699,5 +705,47 @@ final class BluetoothMonitor: NSObject, CBCentralManagerDelegate {
 
     private static func available(_ names: [String]) -> String? {
         names.first { NSImage(systemSymbolName: $0, accessibilityDescription: nil) != nil }
+    }
+}
+
+// MARK: - What you cleared
+
+/// Remembers which notifications you cleared or swiped away, so they don't come
+/// back when Brim restarts (after an update, say) and reloads the latest ones
+/// from Notification Center. Only the app and delivery time are kept, never
+/// what a notification says. Notification Center itself is never touched.
+enum ClearedNotifications {
+    private static let clearedAtKey = "notificationsClearedAt"
+    private static let dismissedKey = "notificationsDismissed"
+    private static let dismissedLimit = 300
+
+    /// Clear: everything delivered until now stays gone.
+    static func clearedAll() {
+        UserDefaults.standard.set(Date(), forKey: clearedAtKey)
+        UserDefaults.standard.removeObject(forKey: dismissedKey)
+    }
+
+    /// Swiped away one by one.
+    static func dismissed(_ alerts: [NotchAlert]) {
+        let keys = alerts.compactMap(key(for:))
+        guard !keys.isEmpty else { return }
+        var list = UserDefaults.standard.stringArray(forKey: dismissedKey) ?? []
+        list.append(contentsOf: keys.filter { !list.contains($0) })
+        if list.count > dismissedLimit { list.removeFirst(list.count - dismissedLimit) }
+        UserDefaults.standard.set(list, forKey: dismissedKey)
+    }
+
+    /// Whether this one was cleared or swiped away before.
+    static func wasCleared(_ alert: NotchAlert) -> Bool {
+        if let clearedAt = UserDefaults.standard.object(forKey: clearedAtKey) as? Date,
+           alert.date <= clearedAt { return true }
+        guard let key = key(for: alert) else { return false }
+        return (UserDefaults.standard.stringArray(forKey: dismissedKey) ?? []).contains(key)
+    }
+
+    /// The sending app and the delivery time, to the second.
+    private static func key(for alert: NotchAlert) -> String? {
+        guard let bundleID = alert.bundleID else { return nil }
+        return "\(bundleID)|\(Int(alert.date.timeIntervalSince1970))"
     }
 }
