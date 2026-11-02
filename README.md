@@ -3,7 +3,7 @@
 <p align="center">
   <a href="https://github.com/martinsrepos/Brim/releases/latest"><img src="https://img.shields.io/github/v/release/martinsrepos/Brim?label=download" alt="Latest release"></a>
   <img src="https://img.shields.io/badge/macOS-14%2B-black" alt="macOS 14 or later">
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/martinsrepos/Brim" alt="MIT licence"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT licence"></a>
   <a href="https://github.com/martinsrepos/Brim/issues/new?template=feature_request.yml"><img src="https://img.shields.io/badge/ideas-welcome-5C79F5" alt="Ideas welcome"></a>
 </p>
 
