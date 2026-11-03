@@ -191,6 +191,17 @@ APPLESCRIPT
     rm -rf "$STAGE"
     codesign --force --sign "$IDENTITY" "$DMG" >/dev/null 2>&1 || true
     echo "Made $DMG ($(lipo -archs "$APP/Contents/MacOS/$EXEC_NAME"))"
+    # A detached GPG signature next to the DMG, uploaded with it, so anyone
+    # can check the download came from Brim's maintainer. Uses your default
+    # GPG key, or the one named in BRIM_GPG_KEY.
+    if command -v gpg >/dev/null 2>&1 && gpg --list-secret-keys ${BRIM_GPG_KEY:+"$BRIM_GPG_KEY"} >/dev/null 2>&1 \
+       && [[ -n "$(gpg --list-secret-keys ${BRIM_GPG_KEY:+"$BRIM_GPG_KEY"} 2>/dev/null)" ]]; then
+      rm -f "$DMG.asc"
+      gpg --batch --yes --armor --detach-sign ${BRIM_GPG_KEY:+--local-user "$BRIM_GPG_KEY"} --output "$DMG.asc" "$DMG"
+      echo "Signed $DMG.asc"
+    else
+      echo "Note: no GPG key found, so the DMG isn't signed. Releases should include $DMG.asc (see docs/GUIDE.md)."
+    fi
     ;;
   demo)
     # Brim and Brim Demo would both draw an island: Brim steps aside.

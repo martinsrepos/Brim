@@ -42,6 +42,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var settings: SettingsWindowController!
     private var power: PowerMonitor?
     private var bluetooth: BluetoothMonitor?
+    /// Notifications an app keeps re-sending unchanged (see RepeatFilter).
+    private var repeats = RepeatFilter()
     #if DEMO
     private var demo: DemoRunner?
     #endif
@@ -120,6 +122,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if isNew, self.vm.respectFocus, !self.focus.allows(alert.bundleID) {
                 NotificationLog.write("         (list only: Focus \u{201C}\(self.focus.name ?? "Focus")\u{201D} is on)")
                 self.alerts.remember(alert)
+                return
+            }
+            // The same notification again within a short while (FaceTime
+            // re-sends "move this call to the Mac" all through an iPhone
+            // call): it replaces the older copy in the list, with no banner.
+            if isNew, self.repeats.isRepeat(alert) {
+                NotificationLog.write("         (list only: the same notification was shown a moment ago)")
+                self.alerts.rememberRepeat(alert)
                 return
             }
             if isNew {

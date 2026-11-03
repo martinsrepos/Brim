@@ -214,6 +214,14 @@ final class AlertCenter {
         }
     }
 
+    /// The same notification again (same app, same title, same text): the
+    /// older copy leaves the list and this one takes its place at the top, so
+    /// a notification an app keeps re-sending shows up once.
+    func rememberRepeat(_ alert: NotchAlert) {
+        history.removeAll { $0.bundleID == alert.bundleID && $0.title == alert.title && $0.body == alert.body }
+        remember(alert)
+    }
+
     /// Brings the app that sent a notification to the front, like clicking it in
     /// Notification Center.
     func open(_ alert: NotchAlert) {
@@ -399,7 +407,7 @@ final class PowerMonitor {
 // MARK: - Bluetooth (headphones, AirPods, keyboards...)
 
 /// Battery levels in percent; nil means unknown or not present.
-struct DeviceBattery: Equatable {
+struct DeviceBattery: Equatable, Sendable {
     var left: Int?
     var right: Int?
     var caseLevel: Int?
@@ -411,6 +419,19 @@ struct DeviceBattery: Equatable {
     var singleCharging = false
 
     var isEmpty: Bool { left == nil && right == nil && caseLevel == nil && single == nil }
+}
+
+/// One AirPods proximity broadcast, decoded.
+struct ProximityReading: Sendable {
+    struct Lid: Equatable, Sendable {
+        var openCount: Int
+        var isOpen: Bool
+    }
+    var model: UInt16
+    var battery: DeviceBattery
+    /// Only known while the bud sending it sits in the case; out of the case
+    /// (in your ears) the lid byte means nothing.
+    var lid: Lid?
 }
 
 /// Connection banners for Bluetooth devices, plus the iPhone-style AirPods
@@ -435,6 +456,15 @@ final class BluetoothMonitor: NSObject, CBCentralManagerDelegate {
 
     private var central: CBCentralManager?
     private var lastAirPodsCard = Date.distantPast
+    /// The last lid state each AirPods model reported, to notice the moment
+    /// the case opens rather than every broadcast while it's open.
+    private var lastLid: [UInt16: ProximityReading.Lid] = [:]
+
+    /// How long the same device stays quiet after a banner. AirPods hop
+    /// between your iPhone, iPad and Mac, and drop and rejoin when you take
+    /// one out, so their connections come and go all day; one banner every
+    /// ten minutes per device is plenty.
+    static let quietPeriod: TimeInterval = 600
 
     init(onAlert: @escaping @MainActor (NotchAlert) -> Void) {
         self.onAlert = onAlert
@@ -538,6 +568,9 @@ final class BluetoothMonitor: NSObject, CBCentralManagerDelegate {
                 onAlert(NotchAlert(symbol: Self.symbol(for: name, device: group.first), tint: .gray,
                                    title: name, subtitle: "Disconnected"))
             } else if Self.isAirPods(name) {
+                // The case was just opened next to the Mac and its card is
+                // already up (or was a moment ago): that was the news.
+                guard Date().timeIntervalSince(lastAirPodsCard) > 120 else { continue }
                 lastAirPodsCard = Date()
                 onAlert(Self.airPodsAlert(name: name, battery: battery, status: "Connected"))
             } else {
@@ -566,12 +599,12 @@ final class BluetoothMonitor: NSObject, CBCentralManagerDelegate {
         }
     }
 
-    /// Ignores a repeat of the same event for the same device within 10 seconds,
-    /// in case its connections straddle two groups.
+    /// One banner per device and event every ten minutes. The window slides:
+    /// a device that keeps dropping and rejoining stays quiet until it settles.
     private func isFresh(_ key: String, _ event: String) -> Bool {
         let id = key + "|" + event
         defer { lastEvent[id] = Date() }
-        return Date().timeIntervalSince(lastEvent[id] ?? .distantPast) > 10
+        return Date().timeIntervalSince(lastEvent[id] ?? .distantPast) > Self.quietPeriod
     }
 
     // MARK: Battery
@@ -637,16 +670,26 @@ final class BluetoothMonitor: NSObject, CBCentralManagerDelegate {
         MainActor.assumeIsolated { self.caseNearby(reading, rssi: strength) }
     }
 
-    private func caseNearby(_ battery: DeviceBattery, rssi: Int) {
+    /// AirPods broadcast this message the whole time they're awake, in your
+    /// ears included, not only when the case opens. So the card shows only at
+    /// the moment the lid opens: the lid flips from closed to open, or its
+    /// open counter moves on. The first message after Brim starts only sets
+    /// the baseline.
+    private func caseNearby(_ reading: ProximityReading, rssi: Int) {
+        guard let lid = reading.lid else { return }
+        let previous = lastLid[reading.model]
+        lastLid[reading.model] = lid
+        guard let previous, lid.isOpen,
+              !previous.isOpen || previous.openCount != lid.openCount else { return }
         // Only AirPods right next to the Mac (not someone else's across the
-        // room), only if this Mac has AirPods paired, and at most once every
-        // few minutes: the case broadcasts the whole time its lid is open.
+        // room), only if this Mac has AirPods paired, and not again within
+        // ten minutes.
         guard rssi > -52, rssi < 0,
-              Date().timeIntervalSince(lastAirPodsCard) > 180,
+              Date().timeIntervalSince(lastAirPodsCard) > Self.quietPeriod,
               Date().timeIntervalSince(startedAt) > 3,
               let name = Self.pairedAirPodsName() else { return }
         lastAirPodsCard = Date()
-        onAlert(Self.airPodsAlert(name: name, battery: battery, status: "Nearby"))
+        onAlert(Self.airPodsAlert(name: name, battery: reading.battery, status: "Nearby"))
     }
 
     private static func pairedAirPodsName() -> String? {
@@ -657,8 +700,10 @@ final class BluetoothMonitor: NSObject, CBCentralManagerDelegate {
     /// AirPods "proximity pairing" message, the one an iPhone reads to show its
     /// battery popup. Apple manufacturer data (company 0x004C), type 0x07:
     /// byte 6 holds the two buds (one per nibble), byte 7 the charging flags and
-    /// the case. Each level is 0-10 (x10 %), 15 means unknown.
-    nonisolated static func decodeProximity(_ data: Data) -> DeviceBattery? {
+    /// the case, byte 8 the lid (a 3-bit open counter, and bit 3 set while
+    /// it's closed), valid while the sending bud is in the case (bit 6 of
+    /// byte 5). Each level is 0-10 (x10 %), 15 means unknown.
+    nonisolated static func decodeProximity(_ data: Data) -> ProximityReading? {
         let bytes = [UInt8](data)
         guard bytes.count >= 2 + 27, bytes[0] == 0x4C, bytes[1] == 0x00 else { return nil }
         let p = Array(bytes[2...])
@@ -672,8 +717,11 @@ final class BluetoothMonitor: NSObject, CBCentralManagerDelegate {
         let flags = Int(p[7] >> 4), caseRaw = Int(p[7] & 0x0F)
 
         func percent(_ raw: Int) -> Int? { raw <= 10 ? raw * 10 : nil }
+        let inCase = p[5] & 0x40 != 0
+        let lid = inCase ? ProximityReading.Lid(openCount: Int(p[8] & 0x07), isOpen: p[8] & 0x08 == 0) : nil
         if isMax {
-            return DeviceBattery(single: percent(high))
+            let battery = DeviceBattery(single: percent(high))
+            return battery.isEmpty ? nil : ProximityReading(model: model, battery: battery, lid: lid)
         }
         let battery = DeviceBattery(
             left: percent(flipped ? high : low),
@@ -682,7 +730,7 @@ final class BluetoothMonitor: NSObject, CBCentralManagerDelegate {
             leftCharging: flags & (flipped ? 0b0010 : 0b0001) != 0,
             rightCharging: flags & (flipped ? 0b0001 : 0b0010) != 0,
             caseCharging: flags & 0b0100 != 0)
-        return battery.isEmpty ? nil : battery
+        return battery.isEmpty ? nil : ProximityReading(model: model, battery: battery, lid: lid)
     }
 
     // MARK: Symbols
@@ -770,6 +818,43 @@ final class BluetoothMonitor: NSObject, CBCentralManagerDelegate {
 
     private static func available(_ names: [String]) -> String? {
         names.first { NSImage(systemSymbolName: $0, accessibilityDescription: nil) != nil }
+    }
+}
+
+// MARK: - Repeats
+
+/// Some notifications are re-sent over and over while nothing changes. The
+/// clearest case: during a FaceTime call on your iPhone, the Mac posts "move
+/// this call to the Mac" every 10 to 30 seconds for as long as the call lasts.
+/// A notification identical to one shown recently (same app, title and text)
+/// goes to the list quietly, without a banner. The window slides: each repeat
+/// restarts it, so a notification that keeps coming stays quiet until it
+/// stops for a while. Only a fingerprint of the text is kept, in memory.
+struct RepeatFilter {
+    private var lastSeen: [Int: Date] = [:]
+
+    /// Calls and FaceTime repeat for the length of a call; everything else
+    /// only counts as a repeat within two minutes.
+    static func window(for bundleID: String?) -> TimeInterval {
+        let callApps = ["com.apple.facetime", "com.apple.telephonyutilities", "com.apple.mobilephone",
+                        "com.apple.continuity", "com.apple.sharingd"]
+        return callApps.contains((bundleID ?? "").lowercased()) ? 600 : 120
+    }
+
+    /// Whether this exact notification was already shown within its window.
+    mutating func isRepeat(_ alert: NotchAlert, now: Date = Date()) -> Bool {
+        var hasher = Hasher()
+        hasher.combine(alert.bundleID)
+        hasher.combine(alert.title)
+        hasher.combine(alert.body)
+        let key = hasher.finalize()
+        let window = Self.window(for: alert.bundleID)
+        defer {
+            lastSeen[key] = now
+            if lastSeen.count > 200 { lastSeen = lastSeen.filter { now.timeIntervalSince($0.value) < 600 } }
+        }
+        guard let previous = lastSeen[key] else { return false }
+        return now.timeIntervalSince(previous) < window
     }
 }
 

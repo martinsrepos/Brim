@@ -37,3 +37,11 @@ So you know what to look at:
 - Every change to the code is scanned by GitHub's CodeQL, and the results are public in the Security tab.
 - OpenSSF Scorecard rates the repository's security practices every week (the badge in the README).
 - Releases are immutable: once one is published, its DMG and its tag can't be swapped or moved, and GitHub signs a record of them.
+- Every DMG comes with a signature (`Brim-<version>.dmg.asc`). To check a download really came from Brim's maintainer:
+
+  ```bash
+  curl -s https://github.com/martinsrepos.gpg | gpg --import
+  gpg --verify Brim-1.4.1.dmg.asc Brim-1.4.1.dmg
+  ```
+
+  It should say "Good signature from Martin Khalil".

@@ -2,6 +2,11 @@
 
 What's planned for Brim. Ideas and requests are welcome: [open a feature request](https://github.com/martinsrepos/Brim/issues/new?template=feature_request.yml).
 
+## Done in 1.4.2
+
+- AirPods are quieter. The case card shows only at the moment the lid opens (not every few minutes while you wear them), each device gets at most one banner every ten minutes, and opening the case and putting them in shows one card instead of two.
+- A notification an app keeps re-sending unchanged shows once. During a FaceTime call on your iPhone, the Mac's "move this call" notification no longer pops up every few seconds.
+
 ## Next major update
 
 - **Report a Bug button.** In Settings › About and the menu bar menu. It opens the bug report form on GitHub with your Mac, macOS, Brim version and style already filled in, makes the diagnostics report and shows it in Finder, ready to drag into the form. Nothing is sent until you press Submit on GitHub.
@@ -34,6 +39,7 @@ What's planned for Brim. Ideas and requests are welcome: [open a feature request
 ## Done in 1.4.1
 
 - Text Size is Default, Large or Extra Large. With larger text the player's artwork, controls and spacing grow in step, and the panel grows only as much as it needs, so there's no empty space under the player.
+- The code is scanned by GitHub's CodeQL on every change, the repository has an OpenSSF Scorecard, releases are immutable, and every DMG comes with a signature you can check.
 
 ## Next
 
