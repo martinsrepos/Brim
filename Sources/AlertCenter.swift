@@ -455,16 +455,20 @@ final class BluetoothMonitor: NSObject, CBCentralManagerDelegate {
     private var pendingDisconnects: [IOBluetoothDevice] = []
 
     private var central: CBCentralManager?
-    private var lastAirPodsCard = Date.distantPast
-    /// The last lid state each AirPods model reported, to notice the moment
-    /// the case opens rather than every broadcast while it's open.
-    private var lastLid: [UInt16: ProximityReading.Lid] = [:]
-
-    /// How long the same device stays quiet after a banner. AirPods hop
-    /// between your iPhone, iPad and Mac, and drop and rejoin when you take
-    /// one out, so their connections come and go all day; one banner every
-    /// ten minutes per device is plenty.
-    static let quietPeriod: TimeInterval = 600
+    /// Whether opening the case next to the Mac should show the card. It
+    /// shows once per opening, then waits for the case to close before it
+    /// can show again. While the AirPods are connected to the Mac it never
+    /// shows.
+    private var caseArmed = true
+    /// The lid's open counter at the last broadcast: when it moves on, the
+    /// case was closed and opened again in between.
+    private var lastOpenCount: Int?
+    /// The last broadcast from AirPods in their case next to the Mac. A
+    /// closed case goes quiet, so a long gap means it was closed meanwhile.
+    private var lastCaseHeard = Date.distantPast
+    /// When AirPods last disconnected from the Mac. The case broadcasting
+    /// right after that is you putting them away, not opening it.
+    private var lastAirPodsDisconnect = Date.distantPast
 
     init(onAlert: @escaping @MainActor (NotchAlert) -> Void) {
         self.onAlert = onAlert
@@ -506,6 +510,7 @@ final class BluetoothMonitor: NSObject, CBCentralManagerDelegate {
         let address = device.addressString ?? device.name ?? "unknown"
         note.unregister()
         disconnectNotifications[address] = nil
+        if Self.isAirPods(device.name) { lastAirPodsDisconnect = Date() }
         guard connected.remove(address) != nil else { return }
         enqueue(device, connected: false)
     }
@@ -568,10 +573,8 @@ final class BluetoothMonitor: NSObject, CBCentralManagerDelegate {
                 onAlert(NotchAlert(symbol: Self.symbol(for: name, device: group.first), tint: .gray,
                                    title: name, subtitle: "Disconnected"))
             } else if Self.isAirPods(name) {
-                // The case was just opened next to the Mac and its card is
-                // already up (or was a moment ago): that was the news.
-                guard Date().timeIntervalSince(lastAirPodsCard) > 120 else { continue }
-                lastAirPodsCard = Date()
+                // In your ears now: no more case cards until they leave the Mac.
+                caseArmed = false
                 onAlert(Self.airPodsAlert(name: name, battery: battery, status: "Connected"))
             } else {
                 onAlert(NotchAlert(symbol: Self.symbol(for: name, device: group.first), tint: .blue,
@@ -599,12 +602,14 @@ final class BluetoothMonitor: NSObject, CBCentralManagerDelegate {
         }
     }
 
-    /// One banner per device and event every ten minutes. The window slides:
-    /// a device that keeps dropping and rejoining stays quiet until it settles.
+    /// Ignores a repeat of the same event for the same device within 10 seconds,
+    /// in case its connections straddle two groups. Every real connection and
+    /// disconnection (moving between your iPhone and Mac, say) still shows,
+    /// once, as it happens.
     private func isFresh(_ key: String, _ event: String) -> Bool {
         let id = key + "|" + event
         defer { lastEvent[id] = Date() }
-        return Date().timeIntervalSince(lastEvent[id] ?? .distantPast) > Self.quietPeriod
+        return Date().timeIntervalSince(lastEvent[id] ?? .distantPast) > 10
     }
 
     // MARK: Battery
@@ -671,25 +676,44 @@ final class BluetoothMonitor: NSObject, CBCentralManagerDelegate {
     }
 
     /// AirPods broadcast this message the whole time they're awake, in your
-    /// ears included, not only when the case opens. So the card shows only at
-    /// the moment the lid opens: the lid flips from closed to open, or its
-    /// open counter moves on. The first message after Brim starts only sets
-    /// the baseline.
+    /// ears included, not only when the case opens. The card follows what the
+    /// case does instead of a timer: it shows when the lid opens with the
+    /// AirPods inside, next to the Mac, while they aren't connected to it.
+    /// Then nothing until the case closes: the lid reports closed, its open
+    /// counter moves on (closed and opened between two broadcasts), or the
+    /// case goes quiet for half a minute. Putting the AirPods back in the
+    /// open case disconnects them without a new card.
     private func caseNearby(_ reading: ProximityReading, rssi: Int) {
-        guard let lid = reading.lid else { return }
-        let previous = lastLid[reading.model]
-        lastLid[reading.model] = lid
-        guard let previous, lid.isOpen,
-              !previous.isOpen || previous.openCount != lid.openCount else { return }
-        // Only AirPods right next to the Mac (not someone else's across the
-        // room), only if this Mac has AirPods paired, and not again within
-        // ten minutes.
-        guard rssi > -52, rssi < 0,
-              Date().timeIntervalSince(lastAirPodsCard) > Self.quietPeriod,
-              Date().timeIntervalSince(startedAt) > 3,
+        // Only AirPods right next to the Mac, not someone else's across the
+        // room, and only with the earbuds in the case (out of it, the lid
+        // byte means nothing).
+        guard rssi > -58, rssi < 0, let lid = reading.lid else { return }
+        let now = Date()
+        if now.timeIntervalSince(lastCaseHeard) > 30 { caseArmed = true }
+        lastCaseHeard = now
+        guard lid.isOpen else {
+            caseArmed = true
+            lastOpenCount = nil
+            return
+        }
+        if let last = lastOpenCount, last != lid.openCount { caseArmed = true }
+        lastOpenCount = lid.openCount
+        guard caseArmed, now.timeIntervalSince(startedAt) > 3,
               let name = Self.pairedAirPodsName() else { return }
-        lastAirPodsCard = Date()
+        // Still in your ears, or just taken out and being put away: that's
+        // not opening the case. Wait for it to close.
+        guard !Self.airPodsConnectedToMac(), now.timeIntervalSince(lastAirPodsDisconnect) > 20 else {
+            caseArmed = false
+            return
+        }
+        caseArmed = false
         onAlert(Self.airPodsAlert(name: name, battery: reading.battery, status: "Nearby"))
+    }
+
+    /// Paired AirPods that are connected to this Mac right now.
+    private static func airPodsConnectedToMac() -> Bool {
+        let paired = IOBluetoothDevice.pairedDevices() as? [IOBluetoothDevice] ?? []
+        return paired.contains { isAirPods($0.name) && $0.isConnected() }
     }
 
     private static func pairedAirPodsName() -> String? {

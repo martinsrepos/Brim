@@ -2,6 +2,10 @@
 
 What's planned for Brim. Ideas and requests are welcome: [open a feature request](https://github.com/martinsrepos/Brim/issues/new?template=feature_request.yml).
 
+## Done in 1.4.3
+
+- AirPods follow what you do instead of a timer. Opening the case next to the Mac shows Nearby with the battery, putting them in shows Connected, and then nothing until they disconnect. Putting them back in the open case shows Disconnected only. Moving them between your iPhone and Mac shows Connected or Disconnected once, as it happens, with no more missing or late banners.
+
 ## Done in 1.4.2
 
 - AirPods are quieter. The case card shows only at the moment the lid opens (not every few minutes while you wear them), each device gets at most one banner every ten minutes, and opening the case and putting them in shows one card instead of two.
