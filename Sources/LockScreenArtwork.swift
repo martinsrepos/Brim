@@ -144,7 +144,7 @@ final class LockScreenPlayer {
         } else {
             hide(&card)
         }
-        let artWanted = music && vm.ui.showsArtworkFullScreen
+        let artWanted = music && vm.ui.showsArtworkFullScreen && media.playsFromMusicApp
         // The card steps aside while the artwork has the screen.
         if artWanted, artwork == nil {
             showArtwork(on: screen, level: level)
@@ -393,9 +393,11 @@ struct LockScreenPlayerCard: View {
         .frame(width: 56, height: 56)
         .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
         .contentShape(Rectangle())
-        .onTapGesture(perform: showArtwork)
-        .help("Show the artwork full screen")
-        .accessibilityAddTraits(.isButton)
-        .accessibilityLabel("Album artwork. Click to fill the screen.")
+        // Only Apple Music's and Spotify's artwork fills the screen; from a
+        // browser it's often a video still or the site's logo.
+        .onTapGesture { if media.playsFromMusicApp { showArtwork() } }
+        .help(media.playsFromMusicApp ? "Show the artwork full screen" : "")
+        .accessibilityAddTraits(media.playsFromMusicApp ? .isButton : [])
+        .accessibilityLabel(media.playsFromMusicApp ? "Album artwork. Click to fill the screen." : "Artwork")
     }
 }

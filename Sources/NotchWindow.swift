@@ -400,7 +400,12 @@ final class NotchWindowController: NSObject {
             let alpha = window[kCGWindowAlpha as String] as? Double ?? 1
             let isFront = frontCounts && owner == front.processIdentifier
             let isShield = layer >= shieldLevel && owner != me
-            guard isFront || isShield, alpha > 0.05,
+            // App launchers like LaunchOS fill the screen from a window that
+            // doesn't make them the front app (or has no Dock icon), with
+            // their search field at the top, right where the island sits.
+            let ownerName = (window[kCGWindowOwnerName as String] as? String ?? "").lowercased()
+            let isLauncher = owner != me && Self.launchers.contains(ownerName)
+            guard isFront || isShield || isLauncher, alpha > 0.05,
                   let bounds = window[kCGWindowBounds as String] as? NSDictionary,
                   let rect = CGRect(dictionaryRepresentation: bounds as CFDictionary) else { return nil }
             return (rect, layer)
@@ -478,6 +483,9 @@ final class NotchWindowController: NSObject {
         }
         return board.changeCount != dragCountAtRest && (board.types?.contains(.fileURL) ?? false)
     }
+
+    /// Launchers that cover the whole screen like Launchpad did, by app name.
+    private static let launchers: Set<String> = ["launchos", "launchnext", "launchie", "launchpad"]
 
     /// The full-screen app over which the island stays in view (above the
     /// game) instead of tucking away: League of Legends. It runs as two apps
@@ -688,9 +696,15 @@ final class NotchWindowController: NSObject {
             } else if !inside, !panel.ignoresMouseEvents, NSEvent.pressedMouseButtons == 0 {
                 panel.ignoresMouseEvents = true
             }
-            if inside {
+            // With the teleprompter section open, the panel stays put while
+            // you go and find a script, so you can drag it in from Finder
+            // (and it lands there, not on the shelf). It closes from its
+            // button, once a script is picked, or after two minutes away.
+            let away = Date().timeIntervalSince(lastInside)
+            let waitingForScript = vm.ui.showsScripts && (draggingFile || away < 120)
+            if inside || (waitingForScript && draggingFile) {
                 lastInside = Date()
-            } else if Date().timeIntervalSince(lastInside) > 0.25 {
+            } else if away > 0.25, !waitingForScript {
                 setExpanded(false)
             }
         } else {

@@ -2,6 +2,13 @@
 
 What's planned for Brim. Ideas and requests are welcome: [open a feature request](https://github.com/martinsrepos/Brim/issues/new?template=feature_request.yml).
 
+## Done in 1.4.4
+
+- The teleprompter section keeps the panel open while you fetch a script from Finder, so a dragged file lands in the teleprompter instead of on the shelf.
+- Pasting into the script editor works again, from any app.
+- LaunchOS and other full-screen launchers tuck the island away, so their search field isn't hidden behind it.
+- On the lock screen, the artwork fills the screen only for Apple Music and Spotify; from a browser it stays in the card.
+
 ## Done in 1.4.3
 
 - AirPods follow what you do instead of a timer. Opening the case next to the Mac shows Nearby with the battery, putting them in shows Connected, and then nothing until they disconnect. Putting them back in the open case shows Disconnected only. Moving them between your iPhone and Mac shows Connected or Disconnected once, as it happens, with no more missing or late banners.

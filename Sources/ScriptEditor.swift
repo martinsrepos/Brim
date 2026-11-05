@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import Observation
 import SwiftUI
 
@@ -398,9 +399,52 @@ final class ScriptTextView: NSTextView {
     }
 
     override func pasteAsPlainText(_ sender: Any?) {
-        guard let string = NSPasteboard.general.string(forType: .string) else { return }
+        guard let string = Self.plainText(from: .general) else { return }
         let range = selectedRange()
         insertText(NSAttributedString(string: string, attributes: typingAttributes), replacementRange: range)
+    }
+
+    /// The clipboard's text: plain text if it has it, otherwise the words of
+    /// rich text or a web page (some apps only copy those).
+    private static func plainText(from board: NSPasteboard) -> String? {
+        if let string = board.string(forType: .string) { return string }
+        for type in [NSPasteboard.PasteboardType.rtfd, .rtf, .html] {
+            guard let data = board.data(forType: type) else { continue }
+            let kind: NSAttributedString.DocumentType = type == .html ? .html : (type == .rtfd ? .rtfd : .rtf)
+            if let text = try? NSAttributedString(data: data, options: [.documentType: kind], documentAttributes: nil) {
+                return text.string
+            }
+        }
+        return nil
+    }
+
+    /// Brim lives in the menu bar, so its Edit menu isn't always the one
+    /// macOS sends shortcuts to. The text view answers the editing shortcuts
+    /// itself, by key position too, so they work with any keyboard layout.
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        guard event.type == .keyDown, window?.firstResponder === self else {
+            return super.performKeyEquivalent(with: event)
+        }
+        let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
+        let typed = event.charactersIgnoringModifiers?.lowercased() ?? ""
+        func key(_ letter: String, _ code: Int) -> Bool {
+            typed == letter || (!typed.unicodeScalars.allSatisfy(\.isASCII) && Int(event.keyCode) == code)
+        }
+        switch flags {
+        case [.command]:
+            if key("v", kVK_ANSI_V) { paste(nil); return true }
+            if key("c", kVK_ANSI_C) { copy(nil); return true }
+            if key("x", kVK_ANSI_X) { cut(nil); return true }
+            if key("a", kVK_ANSI_A) { selectAll(nil); return true }
+            if key("z", kVK_ANSI_Z) { undoManager?.undo(); return true }
+        case [.command, .shift]:
+            if key("z", kVK_ANSI_Z) { undoManager?.redo(); return true }
+        case [.command, .shift, .option]:
+            if key("v", kVK_ANSI_V) { pasteAsPlainText(nil); return true }
+        default:
+            break
+        }
+        return super.performKeyEquivalent(with: event)
     }
 
     @objc func toggleBold() {

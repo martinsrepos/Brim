@@ -164,6 +164,14 @@ final class MediaController {
     /// Bundle ID of whatever is playing, for the panel's header.
     var sourceBundleID: String? { systemSource ?? player?.bundleID }
 
+    /// Playing from Apple Music or Spotify, whose artwork is real album art,
+    /// sharp enough to fill the screen. A browser's is often a video still or
+    /// a site's logo.
+    var playsFromMusicApp: Bool {
+        guard let source = sourceBundleID?.lowercased() else { return false }
+        return PlayerApp.allCases.contains { $0.bundleID.lowercased() == source }
+    }
+
     private struct Snapshot {
         var stopped: Bool
         var playing: Bool

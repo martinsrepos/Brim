@@ -330,7 +330,7 @@ struct PrompterLibraryView: View {
             ForEach(vm.scripts.scripts.prefix(3)) { script in
                 ScriptRow(script: script, wordsPerMinute: vm.prompter.wordsPerMinute,
                           open: { vm.openScript(script) },
-                          start: { vm.prompter.start(script) },
+                          start: { ui.showsScripts = false; vm.prompter.start(script) },
                           remove: { withAnimation(.easeOut(duration: 0.2)) { vm.scripts.remove(script.id) } })
             }
         }

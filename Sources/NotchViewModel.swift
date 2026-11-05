@@ -271,6 +271,8 @@ final class NotchViewModel {
 
     /// Opens a script in its editor window.
     func openScript(_ script: PromptScript) {
+        // Picked: the panel no longer needs to wait for one.
+        ui.showsScripts = false
         editors.show(script, library: scripts, prompter: prompter)
     }
 
