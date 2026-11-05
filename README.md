@@ -50,7 +50,7 @@ https://github.com/user-attachments/assets/b6e57fea-115d-4773-99e3-25a7d732c283
 - Two things at once, like iPhone
 - Timers, stopwatches and Focus rounds
 - Upcoming meetings with Join
-- Calls with Mute and a live waveform
+- Calls with Mute and a waveform that follows your voice
 - Reminders with Done, kept in view until you tick them off
 - Downloads and AirDrop
 

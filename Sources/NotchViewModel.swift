@@ -175,6 +175,8 @@ final class NotchViewModel {
     let shelf = FileShelf()
     /// What Demo Mode is showing (made-up calls, meetings, downloads).
     let demo = DemoState()
+    /// Your voice's loudness during a call, for the call's waveform.
+    let callVoice = CallVoiceMeter()
     /// Other apps' Live Activities, from this Mac and the iPhone.
     let liveActivities = LiveActivityMonitor()
     let shortcuts = ShortcutButtons()

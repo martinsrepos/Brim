@@ -282,7 +282,8 @@ struct IslandRootView: View {
             }
         case .call:
             if let call = vm.currentCall {
-                CallActivityView(call: call, isMuted: vm.callIsMuted,
+                CallActivityView(call: call, isMuted: vm.callIsMuted, voice: vm.callVoice,
+                                 live: !vm.demo.isRunning,
                                  notchWidth: vm.cameraGap, height: vm.closedSize.height,
                                  layout: vm.compactLayout, showsTitle: vm.showsTitleWhenCompact)
                     .transition(contentTransition)
@@ -1355,10 +1356,14 @@ func callClock(_ interval: TimeInterval) -> String {
     return h > 0 ? String(format: "%d:%02d:%02d", h, m, s) : String(format: "%d:%02d", m, s)
 }
 
-/// A call in the pill: a green phone, the app, and how long it's been going.
+/// A call in the pill: a green phone with the app and how long it's been
+/// going ("FaceTime • 2:14"), and a waveform that moves with your voice.
 struct CallActivityView: View {
     let call: CallMonitor.Call
     let isMuted: Bool
+    let voice: CallVoiceMeter
+    /// False in Brim Demo, where the call is made up and the mic stays off.
+    var live = true
     let notchWidth: CGFloat
     let height: CGFloat
     let layout: CompactLayout
@@ -1366,8 +1371,9 @@ struct CallActivityView: View {
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
-            CompactActivityRow(title: call.appName, notchWidth: notchWidth, height: height,
-                               layout: layout, showsTitle: showsTitle) {
+            let clock = callClock(context.date.timeIntervalSince(call.started))
+            CompactActivityRow(title: "\(call.appName) \u{2022} \(clock)", notchWidth: notchWidth, height: height,
+                               layout: layout, showsTitle: showsTitle, shorter: [clock]) {
                 Circle()
                     .fill(Color.green)
                     .overlay(
@@ -1382,19 +1388,22 @@ struct CallActivityView: View {
                             .foregroundStyle(Color.red)
                             .transition(.scale.combined(with: .opacity))
                     } else {
-                        // A gentle waveform while the call is live (just a
-                        // sign of life: Brim doesn't listen to the mic). It
-                        // settles into dots when you mute.
-                        EqualizerView(color: .green, isPlaying: true)
-                            .frame(width: layout.equalizerSize * 0.8, height: layout.equalizerSize * 0.8)
+                        // Moves with your voice (the loudness only, never
+                        // recorded). Muted, it gives way to the red mic.
+                        CallVoiceWave(meter: voice, live: live)
+                            .frame(width: layout.equalizerSize, height: layout.equalizerSize * 0.8)
                             .transition(.scale.combined(with: .opacity))
                     }
-                    Text(callClock(context.date.timeIntervalSince(call.started)))
-                        .foregroundStyle(Color.green)
+                    // No room for the app's name: the time stays here.
+                    if !showsTitle {
+                        Text(clock).foregroundStyle(Color.green)
+                    }
                 }
                 .animation(.spring(response: 0.3, dampingFraction: 0.8), value: isMuted)
             }
         }
+        .onAppear { if live { voice.attach() } }
+        .onDisappear { if live { voice.detach() } }
     }
 }
 
@@ -1404,6 +1413,8 @@ struct CallRow: View {
     let call: CallMonitor.Call
     let isMuted: Bool
     let canMute: Bool
+    let voice: CallVoiceMeter
+    var live = true
     let onMute: () -> Void
     let onOpen: () -> Void
 
@@ -1432,8 +1443,13 @@ struct CallRow: View {
                 }
             }
             Spacer(minLength: 4)
-            EqualizerView(color: isMuted ? .secondary : .green, isPlaying: !isMuted)
-                .frame(width: 16, height: 16)
+            if isMuted {
+                EqualizerView(color: .secondary, isPlaying: false)
+                    .frame(width: 16, height: 16)
+            } else {
+                CallVoiceWave(meter: voice, live: live)
+                    .frame(width: 18, height: 16)
+            }
             Button(action: onMute) {
                 Image(systemName: isMuted ? "mic.slash.fill" : "mic.fill")
                     .font(.system(size: fs(12), weight: .semibold))
@@ -1455,6 +1471,8 @@ struct CallRow: View {
         .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.primary.opacity(0.06)))
         .contentShape(Rectangle())
         .onTapGesture(perform: onOpen)
+        .onAppear { if live { voice.attach() } }
+        .onDisappear { if live { voice.detach() } }
     }
 }
 
@@ -2327,6 +2345,7 @@ struct ExpandedView: View {
             }
             if let call = vm.currentCall {
                 CallRow(call: call, isMuted: vm.callIsMuted, canMute: vm.callCanMute,
+                        voice: vm.callVoice, live: !vm.demo.isRunning,
                         onMute: { vm.toggleCallMute() }, onOpen: { if !vm.demo.isRunning { vm.calls.openApp() } })
             }
             if let reminder = vm.upcomingReminder {

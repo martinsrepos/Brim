@@ -2,6 +2,10 @@
 
 What's planned for Brim. Ideas and requests are welcome: [open a feature request](https://github.com/martinsrepos/Brim/issues/new?template=feature_request.yml).
 
+## Done in 1.4.5
+
+- Calls in the pill show the app and the time together ("FaceTime • 2:14"), and the waveform on the right now moves with your voice.
+
 ## Done in 1.4.4
 
 - The teleprompter section keeps the panel open while you fetch a script from Finder, so a dragged file lands in the teleprompter instead of on the shelf.
