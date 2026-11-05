@@ -79,9 +79,11 @@ final class CallVoiceMeter {
         timer = nil
         if let configObserver { NotificationCenter.default.removeObserver(configObserver) }
         configObserver = nil
+        // Let go of the microphone completely, so AirPods go back to stereo.
         if let engine {
             engine.inputNode.removeTap(onBus: 0)
             engine.stop()
+            engine.reset()
         }
         engine = nil
         isListening = false

@@ -1,4 +1,5 @@
 import AVFoundation
+import CoreAudio
 import Foundation
 import Speech
 
@@ -84,7 +85,10 @@ final class VoiceFollower {
     private(set) var isListening = false
     let feed = SpeechFeed()
 
-    private let engine = AVAudioEngine()
+    /// A new engine for each session, let go of completely when it ends.
+    /// One kept for good holds on to the microphone even when stopped, and
+    /// AirPods stay in their mono headset mode until something lets go.
+    private var engine: AVAudioEngine?
     private var recognizer: SFSpeechRecognizer?
     private var task: SFSpeechRecognitionTask?
     private var generation = 0
@@ -127,8 +131,7 @@ final class VoiceFollower {
         guard isListening else { return }
         isListening = false
         generation += 1
-        engine.inputNode.removeTap(onBus: 0)
-        engine.stop()
+        release()
         feed.setRequest(nil)
         task?.cancel()
         task = nil
@@ -177,22 +180,52 @@ final class VoiceFollower {
         startTask()
         // The microphone changed (headphones plugged in, another input
         // chosen): start the audio again with the new one.
+        observeConfiguration()
+        Diag.event("Teleprompter listening (\(name))")
+    }
+
+    /// Lets go of the microphone completely: AirPods go back to stereo.
+    private func release() {
+        if let configObserver { NotificationCenter.default.removeObserver(configObserver) }
+        configObserver = nil
+        guard let engine else { return }
+        engine.inputNode.removeTap(onBus: 0)
+        engine.stop()
+        engine.reset()
+        self.engine = nil
+    }
+
+    /// The microphone changed (headphones plugged in, another input chosen):
+    /// start again with a new engine on the new one.
+    private func observeConfiguration() {
+        if let configObserver { NotificationCenter.default.removeObserver(configObserver) }
         configObserver = NotificationCenter.default.addObserver(
             forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, self.isListening else { return }
-                self.engine.inputNode.removeTap(onBus: 0)
-                self.engine.stop()
-                if !self.startEngine() { self.stop() }
+                self.release()
+                if self.startEngine() { self.observeConfiguration() } else { self.stop() }
             }
         }
-        Diag.event("Teleprompter listening (\(name))")
     }
 
     private func startEngine() -> Bool {
+        let engine = AVAudioEngine()
+        self.engine = engine
         let input = engine.inputNode
+        // With AirPods (or other Bluetooth headphones) as the microphone,
+        // listening switches them to their mono headset mode for as long as
+        // it lasts. The Mac's own microphone is used instead when it has one,
+        // so your audio stays in stereo.
+        if let builtIn = MicrophoneChoice.builtInInsteadOfBluetooth(), let unit = input.audioUnit {
+            var device = builtIn
+            AudioUnitSetProperty(unit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0,
+                                 &device, UInt32(MemoryLayout<AudioDeviceID>.size))
+            Diag.event("Teleprompter: using the Mac's microphone, so Bluetooth headphones stay in stereo")
+        }
         let format = input.outputFormat(forBus: 0)
         guard format.sampleRate > 0, format.channelCount > 0 else {
+            release()
             onProblem?(.noMicrophone)
             return false
         }
@@ -206,7 +239,7 @@ final class VoiceFollower {
             try engine.start()
             return true
         } catch {
-            input.removeTap(onBus: 0)
+            release()
             onProblem?(.failed(error.localizedDescription))
             return false
         }
@@ -366,5 +399,62 @@ final class VoiceFollower {
             previous = current
         }
         return previous[y.count]
+    }
+}
+
+/// Which microphone to listen with.
+enum MicrophoneChoice {
+    /// The Mac's built-in microphone, when the default input is Bluetooth
+    /// headphones and the Mac has one of its own (a MacBook or an iMac; a Mac
+    /// mini or Mac Studio doesn't). Nil means keep the default.
+    static func builtInInsteadOfBluetooth() -> AudioDeviceID? {
+        guard let current = defaultInput(), isBluetooth(current) else { return nil }
+        return inputDevices().first { transport(of: $0) == kAudioDeviceTransportTypeBuiltIn }
+    }
+
+    private static func defaultInput() -> AudioDeviceID? {
+        var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultInputDevice,
+                                                 mScope: kAudioObjectPropertyScopeGlobal,
+                                                 mElement: kAudioObjectPropertyElementMain)
+        var device = AudioDeviceID(0)
+        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &device) == noErr,
+              device != 0 else { return nil }
+        return device
+    }
+
+    private static func isBluetooth(_ device: AudioDeviceID) -> Bool {
+        let type = transport(of: device)
+        return type == kAudioDeviceTransportTypeBluetooth || type == kAudioDeviceTransportTypeBluetoothLE
+    }
+
+    private static func transport(of device: AudioDeviceID) -> UInt32 {
+        var address = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyTransportType,
+                                                 mScope: kAudioObjectPropertyScopeGlobal,
+                                                 mElement: kAudioObjectPropertyElementMain)
+        var type = UInt32(0)
+        var size = UInt32(MemoryLayout<UInt32>.size)
+        AudioObjectGetPropertyData(device, &address, 0, nil, &size, &type)
+        return type
+    }
+
+    /// Every device with at least one input channel.
+    private static func inputDevices() -> [AudioDeviceID] {
+        var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDevices,
+                                                 mScope: kAudioObjectPropertyScopeGlobal,
+                                                 mElement: kAudioObjectPropertyElementMain)
+        var size = UInt32(0)
+        guard AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size) == noErr
+        else { return [] }
+        var devices = [AudioDeviceID](repeating: 0, count: Int(size) / MemoryLayout<AudioDeviceID>.size)
+        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &devices) == noErr
+        else { return [] }
+        return devices.filter { device in
+            var streams = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyStreams,
+                                                     mScope: kAudioObjectPropertyScopeInput,
+                                                     mElement: kAudioObjectPropertyElementMain)
+            var bytes = UInt32(0)
+            return AudioObjectGetPropertyDataSize(device, &streams, 0, nil, &bytes) == noErr && bytes > 0
+        }
     }
 }

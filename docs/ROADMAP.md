@@ -2,6 +2,10 @@
 
 What's planned for Brim. Ideas and requests are welcome: [open a feature request](https://github.com/martinsrepos/Brim/issues/new?template=feature_request.yml).
 
+## Done in 1.4.6
+
+- Closing the teleprompter lets go of the microphone completely, so AirPods go back to stereo instead of staying in their mono headset sound. On a MacBook or iMac it listens through the Mac's own microphone, so they don't switch at all.
+
 ## Done in 1.4.5
 
 - Calls in the pill show the app and the time together ("FaceTime • 2:14"), and the waveform on the right now moves with your voice.
