@@ -2,6 +2,10 @@
 
 What's planned for Brim. Ideas and requests are welcome: [open a feature request](https://github.com/martinsrepos/Brim/issues/new?template=feature_request.yml).
 
+## Done in 1.4.7
+
+- Live Activities in the pill show their main line on top and the details under it, like a song and its artist, and the app's icon is a little smaller so it sits like the artwork.
+
 ## Done in 1.4.6
 
 - Closing the teleprompter lets go of the microphone completely, so AirPods go back to stereo instead of staying in their mono headset sound. On a MacBook or iMac it listens through the Mac's own microphone, so they don't switch at all.

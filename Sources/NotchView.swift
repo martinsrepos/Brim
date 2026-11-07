@@ -1171,6 +1171,8 @@ struct CompactActivityRow<Leading: View, Trailing: View>: View {
     /// Shorter ways to say the title, tried in order when it doesn't fit
     /// ("MON 1 – 1 HOS" for "Montañesa 1 – 1 Hospitalet").
     var shorter: [String] = []
+    /// A second line under the title, smaller, like the song's artist.
+    var subtitle: String? = nil
     @ViewBuilder let leading: Leading
     @ViewBuilder let trailing: Trailing
 
@@ -1219,7 +1221,20 @@ struct CompactActivityRow<Leading: View, Trailing: View>: View {
             HStack(spacing: 8) {
                 leading
                     .frame(width: layout.artworkSize, height: layout.artworkSize)
-                if showsTitle {
+                if showsTitle, let subtitle, !subtitle.isEmpty {
+                    // Title on top, the description under it, both sized to
+                    // the pill's height like the song and artist.
+                    let titleSize = min(14, max(10.5, (height * 0.37).rounded()))
+                    VStack(alignment: .leading, spacing: -1) {
+                        titleText
+                            .font(.system(size: titleSize, weight: .semibold))
+                        Text(subtitle)
+                            .font(.system(size: (titleSize * 0.8).rounded()))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                } else if showsTitle {
                     titleText
                         .font(.system(size: layout.titleSize, weight: .semibold))
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -3510,8 +3525,12 @@ struct ExternalActivityView: View {
 
     var body: some View {
         CompactActivityRow(title: activity.title, notchWidth: notchWidth, height: height,
-                           layout: layout, showsTitle: showsTitle, shorter: activity.shorterTitles) {
-            ExternalAppIcon(activity: activity, size: layout.artworkSize)
+                           layout: layout, showsTitle: showsTitle, shorter: activity.shorterTitles,
+                           subtitle: activity.detail) {
+            // A touch smaller than its spot: an app icon is a solid tile edge
+            // to edge, and at full size it looks bigger than the song's
+            // artwork in the same place.
+            ExternalAppIcon(activity: activity, size: (layout.artworkSize * 0.84).rounded())
         } trailing: {
             HStack(spacing: 4) {
                 if activity.isStale {

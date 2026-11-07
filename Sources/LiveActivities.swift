@@ -574,6 +574,15 @@ struct ExternalActivity: Identifiable, Equatable {
         }
     }
 
+    /// The line under the title in the pill, like the panel's: what the app
+    /// says ("Jollibee is preparing your order"), or a match's competition.
+    var detail: String {
+        switch display {
+        case .match(let m): return m.competition ?? appName
+        case .general(let g): return g.subtitle ?? appName
+        }
+    }
+
     /// A match that's being played right now (a minute, fresh data).
     var isMatch: Bool {
         if case .match = display { return true }
