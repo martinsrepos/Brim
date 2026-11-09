@@ -42,6 +42,9 @@ struct NotchAlert: Identifiable, Equatable {
     /// Made up by Demo Mode: the only kind shown while it runs, and gone
     /// from the list when it ends.
     var isDemo = false
+    /// Came from your iPhone (macOS's "Allow notifications from iPhone"):
+    /// its icon gets the iPhone's rounded corners and a small iPhone mark.
+    var fromiPhone = false
 
     static func == (lhs: NotchAlert, rhs: NotchAlert) -> Bool { lhs.id == rhs.id && lhs.revision == rhs.revision }
 
@@ -237,6 +240,12 @@ final class AlertCenter {
             return
         }
         guard let bundleID = alert.bundleID else { return }
+        // From the iPhone: open it there, in iPhone Mirroring.
+        if alert.fromiPhone, let mirroring = LiveActivityMonitor.iPhoneMirroring {
+            NSWorkspace.shared.openApplication(at: mirroring, configuration: NSWorkspace.OpenConfiguration(),
+                                               completionHandler: nil)
+            return
+        }
         let target = bundleID.lowercased().hasPrefix("web.") ? "com.apple.Safari" : bundleID
         guard let url = AppLocator.url(for: target) else { return }
         NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration(),

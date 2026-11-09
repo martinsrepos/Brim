@@ -100,6 +100,9 @@ final class FileShelf {
 struct ShelfView: View {
     let vm: NotchViewModel
     let isTargeted: Bool
+    /// Under the player in a tall panel: always there, filling the space,
+    /// with a drop area while it's empty.
+    var fillsHeight = false
 
     var body: some View {
         let shelf = vm.shelf
@@ -137,10 +140,19 @@ struct ShelfView: View {
                 }
             }
             if shelf.items.isEmpty {
-                Text("Drop to keep it here")
-                    .font(.system(size: fs(11), weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, minHeight: 44)
+                VStack(spacing: 4) {
+                    if fillsHeight {
+                        Image(systemName: isTargeted ? "arrow.down.circle.fill" : "arrow.down.circle")
+                            .font(.system(size: fs(16), weight: .regular))
+                            .foregroundStyle(isTargeted ? Color.accentColor : Color.secondary)
+                            .contentTransition(.symbolEffect(.replace))
+                    }
+                    Text(fillsHeight ? "Drop files here" : "Drop to keep it here")
+                        .font(.system(size: fs(11), weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: fillsHeight ? .infinity : nil)
+                .frame(minHeight: 44)
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) {
@@ -153,6 +165,7 @@ struct ShelfView: View {
             }
         }
         .padding(8)
+        .frame(maxHeight: fillsHeight ? .infinity : nil, alignment: .top)
         .background {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(Color.primary.opacity(isTargeted ? 0.12 : 0.06))

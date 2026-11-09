@@ -142,7 +142,11 @@ final class LiveActivityMonitor {
         }
         for index in list.indices {
             let stale = list[index].staleDate.map { $0 <= now } ?? false
-            if list[index].isStale != stale { list[index].isStale = stale; changed = true }
+            if list[index].isStale != stale {
+                list[index].isStale = stale
+                if stale { list[index].applyStale() }
+                changed = true
+            }
         }
         if changed { withAnimation(.spring(response: 0.45, dampingFraction: 0.88)) { items = list } }
     }
@@ -156,6 +160,7 @@ final class LiveActivityMonitor {
             guard var activity = Self.parse(row) else { continue }
             if let end = activity.endDate, end <= now { continue }
             activity.isStale = activity.staleDate.map { $0 <= now } ?? false
+            if activity.isStale { activity.applyStale() }
             list.append(activity)
         }
         list.sort { $0.relevance != $1.relevance ? $0.relevance > $1.relevance : $0.started > $1.started }
@@ -221,7 +226,7 @@ final class LiveActivityMonitor {
         }
     }
 
-    private static var iPhoneMirroring: URL? {
+    static var iPhoneMirroring: URL? {
         if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.ScreenContinuity") { return url }
         let path = "/System/Applications/iPhone Mirroring.app"
         return FileManager.default.fileExists(atPath: path) ? URL(fileURLWithPath: path) : nil
@@ -306,8 +311,9 @@ final class LiveActivityMonitor {
             fromiPhone: row.device != nil && AppLocator.url(for: row.requester) == nil,
             started: date(row.created) ?? Date(),
             relevance: relevance, staleDate: stale, endDate: row.dismissal.flatMap(date),
-            display: display(state: state, attributes: attributes, appName: appName))
+            display: display(state: state, attributes: attributes, appName: appName, stale: stale))
         activity.alert = alert(in: payload)
+        if case .general = activity.display { activity.tint = tint(state: state, attributes: attributes) }
         return activity
     }
 
@@ -352,7 +358,9 @@ final class LiveActivityMonitor {
 
     /// Short readable text, not an ID, a link or a code.
     private static func isReadable(_ text: String) -> Bool {
-        let t = text.trimmingCharacters(in: .whitespaces)
+        let t = clean(text)
+        // snake_case names ("streak_saver", "bold_red") are settings, not words.
+        if !t.contains(" ") && t.contains("_") { return false }
         guard (1...90).contains(t.count), !t.contains("://") else { return false }
         // Asset names ("dh:customer-assets/...svg") and enum values
         // ("ANIMATED", "POSITIVE", "IN_PROGRESS"), not words for people.
@@ -363,9 +371,31 @@ final class LiveActivityMonitor {
         return true
     }
 
-    private static func display(state: Any?, attributes: Any?, appName: String) -> ExternalActivity.Display {
+    /// Without the invisible left-to-right marks some apps put around names
+    /// and numbers ("Last chance, \u{200E}Martin\u{200E}!").
+    private static func clean(_ text: String) -> String {
+        let marks: Set<Unicode.Scalar> = ["\u{200E}", "\u{200F}", "\u{202A}", "\u{202B}", "\u{202C}", "\u{202D}",
+                                          "\u{202E}", "\u{2066}", "\u{2067}", "\u{2068}", "\u{2069}"]
+        return String(String.UnicodeScalarView(text.unicodeScalars.filter { !marks.contains($0) }))
+            .trimmingCharacters(in: .whitespaces)
+    }
+
+    private static func display(state: Any?, attributes: Any?, appName: String, stale: Date?) -> ExternalActivity.Display {
         if let match = match(state: state, attributes: attributes) { return .match(match) }
-        return .general(general(state: state, attributes: attributes, appName: appName))
+        return .general(general(state: state, attributes: attributes, appName: appName, stale: stale))
+    }
+
+    /// A colour the app names for its text or card: a hex code, or a colour
+    /// word inside a style name ("bold_red", "theme-orange").
+    private static func tint(state: Any?, attributes: Any?) -> String? {
+        let named = (leaves(state) + leaves(attributes)).filter { matches($0.key, "(style|color|colour|tint|theme)") }
+        for leaf in named {
+            guard let value = leaf.value as? String else { continue }
+            if value.range(of: "^#?[0-9A-Fa-f]{6}$", options: .regularExpression) != nil { return value }
+            let words = value.lowercased().split(whereSeparator: { !$0.isLetter }).map(String.init)
+            if let word = words.first(where: { AppAccent.named($0) != nil }) { return word }
+        }
+        return nil
     }
 
     /// Sports: two scores in the live data and two teams in the fixed data.
@@ -399,10 +429,24 @@ final class LiveActivityMonitor {
     }
 
     /// Any other app: its main line, a second line, and the value that changes.
-    private static func general(state: Any?, attributes: Any?, appName: String) -> ExternalActivity.General {
+    private static func general(state: Any?, attributes: Any?, appName: String, stale: Date?) -> ExternalActivity.General {
         let live = leaves(state), fixed = leaves(attributes)
-        let liveTexts = live.filter { ($0.value as? String).map(isReadable) ?? false }
-        let fixedTexts = fixed.filter { ($0.value as? String).map(isReadable) ?? false }
+        // Keys that name a setting rather than hold words for you: which
+        // picture or animation (Duolingo's "terminator"), a style, a type,
+        // the language, an ID, a colour.
+        let settingKeys = "(asset|style|type|lang|language|locale|^id$|_id$|identifier|icon|image|animation|color|colour|tint|theme|sound|url)"
+        // Lines kept for when the activity has gone out of date.
+        let staleKeys = "(^|_)stale(_|$)|^stale"
+        func readable(_ leaves: [(key: String, parent: String, value: Any)]) -> [(key: String, parent: String, value: Any)] {
+            leaves.compactMap { leaf in
+                guard let string = leaf.value as? String, isReadable(string), !matches(leaf.key, settingKeys) else { return nil }
+                return (key: leaf.key, parent: leaf.parent, value: clean(string) as Any)
+            }
+        }
+        let liveAll = readable(live), fixedAll = readable(fixed)
+        let liveTexts = liveAll.filter { !matches($0.key, staleKeys) }
+        let fixedTexts = fixedAll.filter { !matches($0.key, staleKeys) }
+        let staleTexts = (liveAll + fixedAll).filter { matches($0.key, staleKeys) }
         func text(_ leaves: [(key: String, parent: String, value: Any)], _ pattern: String, not excluded: String? = nil) -> String? {
             leaves.first { leaf in
                 guard matches(leaf.key, pattern) else { return false }
@@ -414,11 +458,16 @@ final class LiveActivityMonitor {
         // Most apps name their lines: a title ("Arriving in 5 min"), a
         // subtitle ("Your order is being delivered!"), a short one for the
         // compact view ("5min"). Those come first; otherwise the first lines.
+        // Apps that only send fixed data (Duolingo's streak reminder) put
+        // the line under their countdown in a "timer" text.
         let title = text(liveTexts, "title", not: "subtitle")
             ?? text(liveTexts, "(headline|heading|message|status|stage|state)")
             ?? liveTexts.first?.value as? String
-            ?? text(fixedTexts, "(title|name)") ?? fixedTexts.first?.value as? String
+            ?? text(fixedTexts, "title", not: "subtitle")
+            ?? text(fixedTexts, "(timer|countdown|headline|heading|message|status)")
+            ?? text(fixedTexts, "name") ?? fixedTexts.first?.value as? String
         let subtitle = (text(liveTexts, "(subtitle|detail|body|description)")
+            ?? text(fixedTexts, "(subtitle|detail|body|description|expanded)")
             ?? (liveTexts + fixedTexts).compactMap { $0.value as? String }.first { $0 != title })
             .flatMap { $0 == title ? nil : $0 }
         var value = text(liveTexts, "(compact|short|minimal)")
@@ -454,6 +503,24 @@ final class LiveActivityMonitor {
                 }
             }
         }
+        // A countdown: a deadline in the data, or (for an app whose data
+        // talks about a timer but sends no date, like Duolingo's streak)
+        // the activity's own end, its stale date. Only within a day.
+        var countdown: Date?
+        if value == nil {
+            let deadline = (live + fixed).first { leaf in
+                guard matches(leaf.key, "(deadline|expir|countdown|timer|ends?_?(at|date|time)|end_?date)"),
+                      let n = number(leaf.value), let d = date(n) else { return false }
+                return d > Date() && d.timeIntervalSinceNow < 86_400
+            }.flatMap { number($0.value) }.flatMap(date)
+            let talksOfTimer = (live + fixed).contains { matches($0.key, "(timer|countdown)") }
+            if let deadline {
+                countdown = deadline
+            } else if talksOfTimer, let stale, stale > Date(), stale.timeIntervalSinceNow < 86_400 {
+                countdown = stale
+            }
+            if let countdown { value = countdownClock(countdown.timeIntervalSinceNow) }
+        }
         if value == nil {
             value = liveTexts.first { matches($0.key, "(eta|time|remaining|count|distance)") }?.value as? String
         }
@@ -469,6 +536,9 @@ final class LiveActivityMonitor {
         }
         let said = [title, subtitle].compactMap { $0 }.contains { matches($0, doneWords) && !matches($0, notYet) }
         var general = ExternalActivity.General(title: title ?? appName, subtitle: subtitle, value: value, progress: progress)
+        general.countdown = countdown
+        general.staleTitle = text(staleTexts, "title", not: "subtitle")
+        general.staleSubtitle = text(staleTexts, "(subtitle|detail|body|description)")
         general.finished = flagged || said
         // A percentage the app didn't write itself is only shown for tasks
         // (scans, exports); a delivery has its own words.
@@ -514,6 +584,17 @@ struct ExternalActivity: Identifiable, Equatable {
     var alert: Alert? = nil
     /// Past its stale date: the app stopped sending updates.
     var isStale = false
+    /// A colour the app names in its own data ("bold_red", "#58CC02"),
+    /// which beats the one taken from its icon. Changes with the message.
+    var tint: String? = nil
+
+    /// Out of date: the app's own lines for that moment, and no countdown.
+    mutating func applyStale() {
+        guard case .general(var g) = display else { return }
+        if let staleTitle = g.staleTitle { g.title = staleTitle; g.subtitle = g.staleSubtitle }
+        if g.countdown != nil { g.countdown = nil; g.value = nil }
+        display = .general(g)
+    }
 
     enum Display: Equatable {
         case match(Match)
@@ -536,6 +617,13 @@ struct ExternalActivity: Identifiable, Equatable {
         var subtitle: String?
         var value: String?
         var progress: Double?
+        /// A deadline the app counts down to ("1:48:14" until your streak
+        /// ends), shown ticking every second.
+        var countdown: Date?
+        /// The lines the app wants once its activity is out of date
+        /// (Duolingo after midnight: "Duo misses you!").
+        var staleTitle: String?
+        var staleSubtitle: String?
         /// The app said it's finished (or progress reached 100%).
         var finished = false
         /// A task measured in percent (a scan, an export), rather than a
@@ -559,7 +647,10 @@ struct ExternalActivity: Identifiable, Equatable {
 
     /// The app's colour, taken from its icon (Glovo's yellow, Uber's
     /// black falls back to green).
-    @MainActor var accent: Color { AppAccent.color(for: bundleID, icon: icon) }
+    @MainActor var accent: Color {
+        if let tint, let named = AppAccent.named(tint) { return named }
+        return AppAccent.color(for: bundleID, icon: icon)
+    }
 
     @MainActor var icon: NSImage? {
         if let url = AppLocator.url(for: bundleID) { return NSWorkspace.shared.icon(forFile: url.path) }
@@ -620,6 +711,12 @@ struct ExternalActivity: Identifiable, Equatable {
         }
     }
 
+    /// The deadline a general activity counts down to, if any.
+    var countdown: Date? {
+        if case .general(let g) = display { return g.countdown }
+        return nil
+    }
+
     /// For the circle: the score, or the value.
     var short: String? {
         switch display {
@@ -676,6 +773,32 @@ enum IPhoneAppIcons {
 enum AppAccent {
     private static var cache: [String: Color] = [:]
 
+    /// A colour an app names in its data: a hex code ("#58CC02") or a word
+    /// ("red"). Nil for anything else.
+    static func named(_ name: String) -> Color? {
+        let n = name.lowercased().trimmingCharacters(in: .whitespaces)
+        if n.range(of: "^#?[0-9a-f]{6}$", options: .regularExpression) != nil,
+           let value = UInt32(n.replacingOccurrences(of: "#", with: ""), radix: 16) {
+            return Color(red: Double((value >> 16) & 0xFF) / 255, green: Double((value >> 8) & 0xFF) / 255,
+                         blue: Double(value & 0xFF) / 255)
+        }
+        switch n {
+        case "red": return Color(red: 1, green: 0.29, blue: 0.29)   // a bright red that reads on dark glass
+        case "orange": return .orange
+        case "yellow", "gold": return .yellow
+        case "green": return .green
+        case "mint": return .mint
+        case "teal": return .teal
+        case "cyan": return .cyan
+        case "blue": return .blue
+        case "indigo": return .indigo
+        case "purple": return .purple
+        case "pink": return .pink
+        case "brown": return .brown
+        default: return nil
+        }
+    }
+
     static func color(for bundleID: String, icon: NSImage?) -> Color {
         if let color = cache[bundleID] { return color }
         guard let icon, let color = vivid(icon) else { return .green }
@@ -706,4 +829,11 @@ enum AppAccent {
         guard total > Double(side * side) * 0.06 else { return nil }
         return Color(red: r / total, green: g / total, blue: b / total)
     }
+}
+
+/// "1:48:14", or "48:14" under an hour, for a countdown.
+func countdownClock(_ seconds: TimeInterval) -> String {
+    let total = max(0, Int(seconds.rounded(.down)))
+    let h = total / 3600, m = (total % 3600) / 60, sec = total % 60
+    return h > 0 ? String(format: "%d:%02d:%02d", h, m, sec) : String(format: "%d:%02d", m, sec)
 }

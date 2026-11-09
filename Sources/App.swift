@@ -23,6 +23,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var vm: NotchViewModel!
     private var notch: NotchWindowController!
     private var mirror: NotificationMirror!
+    /// Your iPhone's notifications, when macOS shows them on the Mac.
+    private var iPhoneMirror: IPhoneNotificationMirror!
     private var lock: LockMonitor!
     private var timer: TimerController!
     private var calendar: CalendarMonitor!
@@ -109,7 +111,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         accessoryBatteries = AccessoryBatteryMonitor(onAlert: post)
         accessoryBatteries?.start()
 
-        mirror = NotificationMirror { [weak self] alert, isNew in
+        // Every notification, from the Mac or the iPhone, goes through here.
+        let handle: @MainActor (NotchAlert, Bool) -> Void = { [weak self] alert, isNew in
             guard let self else { return }
             // Spotify's and Music's "now playing" notifications repeat what the
             // island already shows, so they're skipped.
@@ -139,9 +142,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 self.alerts.remember(alert)
             }
         }
+        mirror = NotificationMirror(onAlert: handle)
+        iPhoneMirror = IPhoneNotificationMirror(onAlert: handle)
         mirror.onStatusChange = { [weak self] status in self?.mirrorStatusChanged(status) }
         focus.start()
-        if mirrorEnabled { mirror.start() }
+        if mirrorEnabled {
+            mirror.start()
+            iPhoneMirror.start()
+        }
 
         setupActivities()
         setupStatusItem()
@@ -280,6 +288,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 openFullDiskAccessSettings()
             }
         case .running where previousMirrorStatus == .needsAccess:
+            // Full Disk Access just arrived: the iPhone's folder can be read now.
+            iPhoneMirror.stop()
+            iPhoneMirror.start()
             alerts.post(NotchAlert(symbol: "checkmark.circle.fill", tint: .green,
                                    title: "Notifications connected",
                                    body: "New notifications will appear in the notch."),
@@ -573,7 +584,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func toggleMirror(_ sender: NSMenuItem) {
         mirrorEnabled.toggle()
-        if mirrorEnabled { mirror.start() } else { mirror.stop() }
+        if mirrorEnabled {
+            mirror.start()
+            iPhoneMirror.start()
+        } else {
+            mirror.stop()
+            iPhoneMirror.stop()
+        }
     }
 
     @objc private func sendTest() {

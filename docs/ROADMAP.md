@@ -2,6 +2,13 @@
 
 What's planned for Brim. Ideas and requests are welcome: [open a feature request](https://github.com/martinsrepos/Brim/issues/new?template=feature_request.yml).
 
+## Done in 1.4.8
+
+- **iPhone notifications in Brim.** With "Allow notifications from iPhone" on, your iPhone's notifications show in the island and the list, with the iPhone app's icon and a small iPhone mark. Apps that are on the Mac too are skipped, so nothing shows twice. Clicking one opens iPhone Mirroring.
+- Duolingo's streak reminder (and Live Activities like it) shows properly: the countdown ticking every second, "Last chance, Martin!" as its line, and its card's colour, which changes with the message. In the circle, a ring in that colour empties as the time runs out. Picture and style names (like Duo's "terminator") no longer show up as text, and the lines meant for after the activity runs out wait until then.
+- In a tall panel, the file shelf sits under the player, filling the space that used to be empty, and the notifications keep the whole right side.
+- Keep Open While Adjusting switches itself off when you close Settings.
+
 ## Done in 1.4.7
 
 - Live Activities in the pill show their main line on top and the details under it, like a song and its artist, and the app's icon is a little smaller so it sits like the artwork.

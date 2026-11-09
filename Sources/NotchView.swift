@@ -734,9 +734,19 @@ struct BubbleView: View {
                 ZStack {
                     // A live match's ring breathes, softly: live, without a
                     // dot that could pass for the camera or recording light.
-                    LiveRing(progress: activity.progress ?? 1,
-                             tint: activity.isStale ? .secondary : (activity.isLiveMatch || activity.isMatch ? .green : activity.accent),
-                             breathing: activity.isLiveMatch)
+                    if let end = activity.countdown, !activity.isStale {
+                        // A countdown: the ring empties as the time runs
+                        // out, in the app's colour (Duolingo's red).
+                        TimelineView(.periodic(from: .now, by: 1)) { context in
+                            let total = max(1, end.timeIntervalSince(activity.started))
+                            EdgeRing(progress: min(1, max(0, end.timeIntervalSince(context.date) / total)),
+                                     tint: activity.accent)
+                        }
+                    } else {
+                        LiveRing(progress: activity.progress ?? 1,
+                                 tint: activity.isStale ? .secondary : (activity.isLiveMatch || activity.isMatch ? .green : activity.accent),
+                                 breathing: activity.isLiveMatch)
+                    }
                     if case .general(let general) = activity.display, !general.isComplete, !general.isTask || activity.short == nil {
                         // The app's icon inside the ring of its progress.
                         ExternalAppIcon(activity: activity, size: (h * 0.42).rounded())
@@ -747,7 +757,7 @@ struct BubbleView: View {
                             .foregroundStyle(Color.green)
                             .transition(.scale(scale: 0.3).combined(with: .opacity))
                     } else if let short = activity.short {
-                        Text(short)
+                        ActivityValueText(text: short, countdown: activity.countdown)
                             .font(font)
                             .foregroundStyle(activity.isStale ? AnyShapeStyle(.secondary) : AnyShapeStyle(Color.white))
                             .lineLimit(1)
@@ -1907,7 +1917,35 @@ struct AlertIcon: View {
     var animatesProducts = false
 
     var body: some View {
-        if let icon = alert.appIcon {
+        if alert.fromiPhone {
+            // An iPhone app: its square icon with iOS's corners (or its
+            // initial on a colour when the Mac has no copy of the icon), and
+            // a small iPhone mark, like macOS shows.
+            ZStack(alignment: .bottomTrailing) {
+                Group {
+                    if let icon = alert.appIcon {
+                        Image(nsImage: icon).resizable().interpolation(.high)
+                    } else {
+                        let tint = ExternalAppIcon.tint(for: alert.bundleID ?? alert.title)
+                        LinearGradient(colors: [tint.opacity(0.95), tint.opacity(0.7)], startPoint: .top, endPoint: .bottom)
+                            .overlay(
+                                Text(String((alert.appName ?? alert.title).prefix(1)).uppercased())
+                                    .font(.system(size: size * 0.5, weight: .bold, design: .rounded))
+                                    .foregroundStyle(Color.white)
+                            )
+                    }
+                }
+                .frame(width: size, height: size)
+                .clipShape(RoundedRectangle(cornerRadius: size * 0.2237, style: .continuous))
+                Image(systemName: "iphone")
+                    .font(.system(size: size * 0.26, weight: .bold))
+                    .foregroundStyle(Color.white)
+                    .padding(size * 0.07)
+                    .background(Circle().fill(Color.black.opacity(0.75)))
+                    .offset(x: size * 0.14, y: size * 0.14)
+            }
+            .frame(width: size, height: size)
+        } else if let icon = alert.appIcon {
             // App icons already carry their own shape and shadow.
             Image(nsImage: icon)
                 .resizable()
@@ -2075,8 +2113,17 @@ struct ExpandedView: View {
                         PrompterLibraryView(vm: vm)
                             .transition(.opacity.combined(with: .scale(scale: 0.96)))
                     } else {
-                        PlayerView(media: media)
-                            .transition(.opacity)
+                        VStack(alignment: .leading, spacing: fs(12)) {
+                            PlayerView(media: media)
+                                .fixedSize(horizontal: false, vertical: true)
+                            // A tall panel: the shelf takes the space under
+                            // the player instead of the notifications' side.
+                            if shelfUnderPlayer {
+                                ShelfView(vm: vm, isTargeted: ui.shelfDropTargeted, fillsHeight: true)
+                                    .transition(.opacity)
+                            }
+                        }
+                        .transition(.opacity)
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -2342,10 +2389,19 @@ struct ExpandedView: View {
 
     /// Time-sensitive things first (timer, next meeting, download), then
     /// notifications filling the rest.
+    /// Tall enough for the shelf under the player, in the space the player
+    /// leaves empty: the player's height plus room for a row of files.
+    private var shelfUnderPlayer: Bool {
+        guard !ui.showsMirror, !ui.showsScripts else { return false }
+        let contentArea = vm.panelSize.height - PanelLayout.island.contentTop - PanelLayout.island.margin
+        return contentArea - PanelLayout.artworkSize - fs(12) >= fs(92)
+    }
+
     private var activityColumn: some View {
         VStack(spacing: 6) {
-            // Files dropped on the island.
-            if !vm.shelf.items.isEmpty || ui.shelfDropTargeted {
+            // Files dropped on the island (under the player instead, when
+            // the panel is tall enough).
+            if !shelfUnderPlayer, !vm.shelf.items.isEmpty || ui.shelfDropTargeted {
                 ShelfView(vm: vm, isTargeted: ui.shelfDropTargeted)
                     .transition(.opacity.combined(with: .scale(scale: 0.95, anchor: .top)))
             }
@@ -3514,6 +3570,24 @@ struct ExternalAppIcon: View {
     }
 }
 
+/// A Live Activity's value. A countdown ticks every second ("1:48:14");
+/// anything else is the app's own words.
+struct ActivityValueText: View {
+    let text: String
+    let countdown: Date?
+
+    var body: some View {
+        if let countdown {
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                Text(countdownClock(countdown.timeIntervalSince(context.date)))
+                    .monospacedDigit()
+            }
+        } else {
+            Text(text)
+        }
+    }
+}
+
 /// In the pill: the app's icon, its line ("Inter 2 – 1 Milan") and the live
 /// value (the minute, in green). Dimmed with a clock once it's out of date.
 struct ExternalActivityView: View {
@@ -3549,7 +3623,7 @@ struct ExternalActivityView: View {
                     // A delivery, a ride: the app's own short words ("5min")
                     // in its colour, with the order's progress as a ring.
                     if let value = general.value {
-                        Text(value)
+                        ActivityValueText(text: value, countdown: general.countdown)
                             .foregroundStyle(activity.isStale ? AnyShapeStyle(.secondary) : AnyShapeStyle(activity.accent))
                             .contentTransition(.numericText())
                     }
@@ -3596,7 +3670,10 @@ struct ExternalActivityCard: View {
             }
             .padding(.horizontal, 9)
             .padding(.vertical, 7)
-            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.primary.opacity(0.06)))
+            // An app that names its card's colour (Duolingo's red "last
+            // chance") gets a wash of it, like its own card; others stay plain.
+            .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(activity.tint != nil && !activity.isStale ? activity.accent.opacity(0.2) : Color.primary.opacity(0.06)))
             .opacity(activity.isStale ? 0.6 : 1)
             .contentShape(Rectangle())
             .onTapGesture(perform: onOpen)
@@ -3707,7 +3784,7 @@ struct ExternalActivityCard: View {
                         .font(.system(size: fs(16), weight: .semibold))
                         .foregroundStyle(activity.accent)
                 } else if let value = general.value {
-                    Text(value)
+                    ActivityValueText(text: value, countdown: general.countdown)
                         .font(.system(size: fs(12), weight: .semibold).monospacedDigit())
                         .foregroundStyle(general.isTask ? minuteColor : AnyShapeStyle(activity.accent))
                 }

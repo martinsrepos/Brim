@@ -918,6 +918,7 @@ final class SettingsWindowController {
     private var window: NSWindow?
     private let vm: NotchViewModel
     private let state = SettingsState()
+    private var closeObserver: NSObjectProtocol?
 
     init(vm: NotchViewModel) {
         self.vm = vm
@@ -943,6 +944,13 @@ final class SettingsWindowController {
             window.center()
             window.setFrameAutosaveName("BrimSettings")
             self.window = window
+            // The window is kept, not released, when it closes, so its views
+            // never disappear: Keep Open While Adjusting is switched off here,
+            // and the panel closes with the window.
+            closeObserver = NotificationCenter.default.addObserver(
+                forName: NSWindow.willCloseNotification, object: window, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.vm.isPreviewingExpanded = false }
+            }
         }
         // The menu bar menu can change this too.
         state.launchAtLogin = SMAppService.mainApp.status == .enabled

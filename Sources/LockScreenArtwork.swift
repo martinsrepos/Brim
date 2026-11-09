@@ -306,6 +306,10 @@ struct LockActivityCard: View {
                     } else if general.isTask, general.progress != nil {
                         TaskProgress(general: general, size: 18, showsPercent: true)
                             .font(.system(size: fs(15), weight: .semibold))
+                    } else if general.countdown != nil, let value = general.value {
+                        ActivityValueText(text: value, countdown: general.countdown)
+                            .font(.system(size: fs(18), weight: .bold))
+                            .foregroundStyle(activity.accent)
                     }
                 }
                 if let subtitle = general.subtitle {

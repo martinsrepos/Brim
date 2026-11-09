@@ -33,6 +33,7 @@ https://github.com/user-attachments/assets/b6e57fea-115d-4773-99e3-25a7d732c283
 
 **Notifications**
 - Notifications from every app, with the real app icon
+- Your iPhone's notifications too, when macOS shows them on the Mac
 - Stacks in the panel, swipe or flick to clear
 - Respect Focus
 - Private on the lock screen, with the music player, and artwork that fills the screen
