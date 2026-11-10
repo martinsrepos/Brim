@@ -45,6 +45,9 @@ struct NotchAlert: Identifiable, Equatable {
     /// Came from your iPhone (macOS's "Allow notifications from iPhone"):
     /// its icon gets the iPhone's rounded corners and a small iPhone mark.
     var fromiPhone = false
+    /// Its icon already has its shape (macOS's copy of an iPhone app's icon),
+    /// rather than a plain square that needs iOS's corners.
+    var iconHasShape = false
 
     static func == (lhs: NotchAlert, rhs: NotchAlert) -> Bool { lhs.id == rhs.id && lhs.revision == rhs.revision }
 

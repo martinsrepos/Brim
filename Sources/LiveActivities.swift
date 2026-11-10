@@ -643,7 +643,7 @@ struct ExternalActivity: Identifiable, Equatable {
 
     /// The app's icon when it's on this Mac.
     /// A Mac app's icon (already shaped); otherwise the iPhone's square one.
-    @MainActor var iconIsShaped: Bool { AppLocator.url(for: bundleID) != nil }
+    @MainActor var iconIsShaped: Bool { AppLocator.url(for: bundleID) != nil || IPhoneApps.app(for: bundleID) != nil }
 
     /// The app's colour, taken from its icon (Glovo's yellow, Uber's
     /// black falls back to green).
@@ -751,6 +751,9 @@ enum IPhoneAppIcons {
 
     static func icon(for bundleID: String) -> NSImage? {
         if let image = demoIcons[bundleID] { return image }
+        // macOS's own copy of the iPhone app first: every app, with its
+        // shape. WidgetKit's icons only exist for apps with widgets.
+        if let image = IPhoneApps.icon(for: bundleID) { return image }
         if let image = cache[bundleID] { return image }
         // Not there yet: look again after a minute, not on every redraw.
         if let tried = missing[bundleID], Date().timeIntervalSince(tried) < 60 { return nil }

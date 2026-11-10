@@ -2,6 +2,10 @@
 
 What's planned for Brim. Ideas and requests are welcome: [open a feature request](https://github.com/martinsrepos/Brim/issues/new?template=feature_request.yml).
 
+## Done in 1.4.9
+
+- iPhone notifications show the app's real name and icon (Vinted instead of "Fr"), taken from the copies of your iPhone's apps macOS keeps for iPhone Mirroring. Live Activities from iPhone apps get these icons too.
+
 ## Done in 1.4.8
 
 - **iPhone notifications in Brim.** With "Allow notifications from iPhone" on, your iPhone's notifications show in the island and the list, with the iPhone app's icon and a small iPhone mark. Apps that are on the Mac too are skipped, so nothing shows twice. Clicking one opens iPhone Mirroring.

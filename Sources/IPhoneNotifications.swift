@@ -137,6 +137,8 @@ final class IPhoneNotificationMirror {
                                appIcon: IPhoneAppIcons.icon(for: bundleID), appName: name,
                                bundleID: bundleID, duration: 5, date: date)
         alert.fromiPhone = true
+        // macOS's own copy of the icon is already shaped, like a Mac app's.
+        alert.iconHasShape = IPhoneApps.app(for: bundleID) != nil
         return Found(key: id, alert: alert)
     }
 
@@ -177,8 +179,10 @@ final class IPhoneNotificationMirror {
         return false
     }
 
-    /// "com.burbn.instagram" → "Instagram", unless macOS knows the app's name.
+    /// The app's real name from macOS's copy of it ("Vinted" for
+    /// lt.manodrabuziai.fr); otherwise a guess from its ID.
     private func appName(for bundleID: String) -> String {
+        if let real = IPhoneApps.name(for: bundleID) { return real }
         if let cached = names[bundleID] { return cached }
         let known: [String: String] = ["com.burbn.instagram": "Instagram", "com.glovo.glovo": "Glovo",
                                        "com.duolingo.DuolingoMobile": "Duolingo", "com.facebook.Facebook": "Facebook",
@@ -247,5 +251,79 @@ enum KeyedArchive {
         guard text.contains("KeyedArchiverUID"), let range = text.range(of: "value = ") else { return nil }
         let digits = text[range.upperBound...].prefix { $0.isNumber }
         return Int(digits)
+    }
+}
+
+/// Your iPhone's apps, as macOS keeps them on the Mac for iPhone Mirroring: a
+/// placeholder copy of each app with its real name and icon, in
+/// ~/Library/Daemon Containers/<id>/Data/Library/Caches/Placeholders-v6.noindex/
+/// <app ID>-<version>/<Name>.app. Read with Full Disk Access, never changed.
+/// It's how Brim knows that lt.manodrabuziai.fr is Vinted, with Vinted's icon.
+@MainActor
+enum IPhoneApps {
+    private static var apps: [String: URL] = [:]
+    private static var scannedAt = Date.distantPast
+    private static var icons: [String: NSImage] = [:]
+    private static var names: [String: String] = [:]
+
+    /// The placeholder app for an iPhone app ID, if macOS has one.
+    static func app(for bundleID: String) -> URL? {
+        // Looked through every ten minutes, or a minute after an app wasn't
+        // found (it may have just been installed on the iPhone).
+        let age = Date().timeIntervalSince(scannedAt)
+        if age > 600 || (apps[bundleID] == nil && age > 60) { scan() }
+        return apps[bundleID]
+    }
+
+    /// The name the iPhone shows under the app's icon.
+    static func name(for bundleID: String) -> String? {
+        if let cached = names[bundleID] { return cached }
+        guard let app = app(for: bundleID) else { return nil }
+        let info = NSDictionary(contentsOf: app.appendingPathComponent("Info.plist"))
+        let name = (info?["CFBundleDisplayName"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+            ?? (info?["CFBundleName"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+            ?? app.deletingPathExtension().lastPathComponent
+        names[bundleID] = name
+        return name
+    }
+
+    /// The app's icon, drawn by macOS (shaped like a Mac app's icon).
+    static func icon(for bundleID: String) -> NSImage? {
+        if let cached = icons[bundleID] { return cached }
+        guard let app = app(for: bundleID) else { return nil }
+        let icon = NSWorkspace.shared.icon(forFile: app.path)
+        icons[bundleID] = icon
+        return icon
+    }
+
+    private static func scan() {
+        scannedAt = Date()
+        let manager = FileManager.default
+        let root = manager.homeDirectoryForCurrentUser.appendingPathComponent("Library/Daemon Containers")
+        var found: [String: (url: URL, date: Date)] = [:]
+        for container in (try? manager.contentsOfDirectory(atPath: root.path)) ?? [] {
+            let caches = root.appendingPathComponent(container).appendingPathComponent("Data/Library/Caches")
+            for folder in (try? manager.contentsOfDirectory(atPath: caches.path)) ?? [] where folder.hasPrefix("Placeholders-") {
+                let base = caches.appendingPathComponent(folder)
+                for entry in (try? manager.contentsOfDirectory(atPath: base.path)) ?? [] {
+                    // "<app ID>-<version>": the ID is everything before the last dash.
+                    guard let dash = entry.lastIndex(of: "-") else { continue }
+                    let id = String(entry[..<dash])
+                    let folderURL = base.appendingPathComponent(entry)
+                    guard let appName = (try? manager.contentsOfDirectory(atPath: folderURL.path))?
+                        .first(where: { $0.hasSuffix(".app") }) else { continue }
+                    let date = (try? manager.attributesOfItem(atPath: folderURL.path))?[.modificationDate] as? Date ?? .distantPast
+                    // Two versions of one app: the newer copy.
+                    if let existing = found[id], existing.date > date { continue }
+                    found[id] = (folderURL.appendingPathComponent(appName), date)
+                }
+            }
+        }
+        // A newer copy may have a new icon or name.
+        if found.mapValues(\.url) != apps {
+            icons.removeAll()
+            names.removeAll()
+        }
+        apps = found.mapValues(\.url)
     }
 }

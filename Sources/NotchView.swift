@@ -1923,8 +1923,12 @@ struct AlertIcon: View {
             // a small iPhone mark, like macOS shows.
             ZStack(alignment: .bottomTrailing) {
                 Group {
-                    if let icon = alert.appIcon {
+                    if let icon = alert.appIcon, alert.iconHasShape {
+                        // Shaped already, with its own margin and shadow.
                         Image(nsImage: icon).resizable().interpolation(.high)
+                    } else if let icon = alert.appIcon {
+                        Image(nsImage: icon).resizable().interpolation(.high)
+                            .clipShape(RoundedRectangle(cornerRadius: size * 0.2237, style: .continuous))
                     } else {
                         let tint = ExternalAppIcon.tint(for: alert.bundleID ?? alert.title)
                         LinearGradient(colors: [tint.opacity(0.95), tint.opacity(0.7)], startPoint: .top, endPoint: .bottom)
@@ -1936,7 +1940,7 @@ struct AlertIcon: View {
                     }
                 }
                 .frame(width: size, height: size)
-                .clipShape(RoundedRectangle(cornerRadius: size * 0.2237, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: alert.iconHasShape ? 0 : size * 0.2237, style: .continuous))
                 Image(systemName: "iphone")
                     .font(.system(size: size * 0.26, weight: .bold))
                     .foregroundStyle(Color.white)
