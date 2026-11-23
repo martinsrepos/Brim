@@ -2447,7 +2447,10 @@ struct ExpandedView: View {
                                             removal: .opacity.combined(with: .scale(scale: 0.9))))
             }
             if let event = vm.upcomingEvent {
-                EventCard(event: event, minutes: vm.calendar.minutesUntil(event))
+                EventCard(event: event, minutes: vm.calendar.minutesUntil(event),
+                          onTurnOffFocus: vm.meetingFocus.isOnForMeeting && !vm.demo.isRunning
+                              ? { withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { vm.meetingFocus.turnOff() } }
+                              : nil)
             }
             if let call = vm.currentCall {
                 CallRow(call: call, isMuted: vm.callIsMuted, canMute: vm.callCanMute,
@@ -2550,6 +2553,8 @@ extension AnyTransition {
 struct EventCard: View {
     let event: CalendarMonitor.Event
     let minutes: Double
+    /// Brim turned Do Not Disturb on for this meeting: a Turn Off button.
+    var onTurnOffFocus: (() -> Void)? = nil
 
     private var when: String {
         let time = event.start.formatted(date: .omitted, time: .shortened)
@@ -2573,6 +2578,21 @@ struct EventCard: View {
                     .lineLimit(1)
             }
             Spacer(minLength: 4)
+            if let onTurnOffFocus {
+                Button(action: onTurnOffFocus) {
+                    Label("Turn Off", systemImage: "moon.fill")
+                        .labelStyle(.titleAndIcon)
+                        .font(.system(size: fs(11), weight: .semibold))
+                        .foregroundStyle(Color.white)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(Capsule().fill(Color.indigo))
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(PressStyle())
+                .help("Turn off Do Not Disturb now")
+                .transition(.scale(scale: 0.8).combined(with: .opacity))
+            }
             if let link = event.joinURL {
                 Button {
                     NSWorkspace.shared.open(link)

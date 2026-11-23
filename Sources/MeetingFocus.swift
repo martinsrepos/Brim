@@ -38,7 +38,12 @@ final class MeetingFocus {
     /// Meetings already asked about, so each is asked once.
     @ObservationIgnored private var asked: Set<String> = []
     /// The meeting Brim turned Do Not Disturb on for, and when it ends.
-    @ObservationIgnored private var turnedOnUntil: Date?
+    private(set) var turnedOnUntil: Date?
+    @ObservationIgnored private var turnedOnAt = Date.distantPast
+
+    /// Brim turned Do Not Disturb on for the meeting going on now (the
+    /// panel's meeting card shows Turn Off).
+    var isOnForMeeting: Bool { turnedOnUntil != nil }
     /// A call was going during that meeting: its end is the meeting's end.
     @ObservationIgnored private var sawCall = false
     @ObservationIgnored private var watcher: Timer?
@@ -63,6 +68,12 @@ final class MeetingFocus {
         // The meeting Brim silenced is over: Do Not Disturb off again. With a
         // call, that's when the call hangs up, early or late; without one,
         // at the end time in the calendar.
+        // You turned it off yourself (Control Center, the menu bar): nothing
+        // left for Brim to undo. Focus takes a few seconds to show as on.
+        if turnedOnUntil != nil, !focusOn, now.timeIntervalSince(turnedOnAt) > 20 {
+            turnedOnUntil = nil
+            sawCall = false
+        }
         if let until = turnedOnUntil {
             if callActive { sawCall = true }
             let callEnded = sawCall && !callActive
@@ -89,8 +100,26 @@ final class MeetingFocus {
     func turnOn(until end: Date) {
         run(Self.onName)
         turnedOnUntil = end
+        turnedOnAt = Date()
         sawCall = false
         Diag.event("Meeting Focus: Do Not Disturb on until \(end.formatted(date: .omitted, time: .shortened))")
+    }
+
+    /// The panel's Turn Off: Do Not Disturb off now, before the meeting's over.
+    func turnOff() {
+        guard turnedOnUntil != nil else { return }
+        turnedOnUntil = nil
+        sawCall = false
+        run(Self.offName)
+        Diag.event("Meeting Focus: Do Not Disturb off (Turn Off in the panel)")
+    }
+
+    /// The little "Brim Focus On ✓" notice Shortcuts posts each time one of
+    /// them runs: not news, so Brim leaves it out.
+    static func isOwnShortcutNotice(_ alert: NotchAlert) -> Bool {
+        guard [onName, offName].contains(alert.title) else { return false }
+        let sender = (alert.bundleID ?? "").lowercased() + " " + (alert.appName ?? "").lowercased()
+        return sender.contains("shortcut")
     }
 
     // MARK: The shortcuts

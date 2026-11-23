@@ -4,7 +4,7 @@ What's planned for Brim. Ideas and requests are welcome: [open a feature request
 
 ## Done in 1.4.10
 
-- As a meeting starts, the island can ask "Turn on Do Not Disturb?" with Turn On and Not Now, and turns it off again when the meeting's call hangs up (or at the calendar's end time if there was no call). Calls without a calendar event never ask. Brim makes the two small shortcuts this needs by itself (Settings › Live Activities › Offer Do Not Disturb).
+- As a meeting starts, the island can ask "Turn on Do Not Disturb?" with Turn On and Not Now, and turns it off again when the meeting's call hangs up (or at the calendar's end time if there was no call). Calls without a calendar event never ask. While it's on, the meeting's card in the panel has a Turn Off button. Brim makes the two small shortcuts this needs by itself (Settings › Live Activities › Offer Do Not Disturb).
 - The hotspot notice reads properly: "No Internet on This Wi-Fi" with your iPhone's hotspot offered, instead of "Autohotspot" twice, and a click opens Wi-Fi settings.
 
 ## Done in 1.4.9

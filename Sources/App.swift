@@ -116,6 +116,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Every notification, from the Mac or the iPhone, goes through here.
         let handle: @MainActor (NotchAlert, Bool) -> Void = { [weak self] alert, isNew in
             guard let self else { return }
+            // Shortcuts' "Brim Focus On ✓" each time Brim runs it: not news.
+            if MeetingFocus.isOwnShortcutNotice(alert) {
+                NotificationLog.write("         (not shown: Brim's own Do Not Disturb shortcut ran)")
+                return
+            }
             // Spotify's and Music's "now playing" notifications repeat what the
             // island already shows, so they're skipped.
             if let sender = alert.bundleID?.lowercased(),
