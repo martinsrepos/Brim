@@ -177,6 +177,8 @@ final class NotchViewModel {
     let demo = DemoState()
     /// Your voice's loudness during a call, for the call's waveform.
     let callVoice = CallVoiceMeter()
+    /// Do Not Disturb for meetings, through two small shortcuts.
+    let meetingFocus = MeetingFocus()
     /// Other apps' Live Activities, from this Mac and the iPhone.
     let liveActivities = LiveActivityMonitor()
     let shortcuts = ShortcutButtons()

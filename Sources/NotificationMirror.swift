@@ -353,9 +353,28 @@ final class NotificationMirror {
         let bundleID = nonEmpty(plist["app"]) ?? row.appIdentifier ?? ""
         let app = appInfo(for: bundleID)
 
-        let title = nonEmpty(request["titl"]) ?? app.name
-        let subtitle = nonEmpty(request["subt"])
-        let body = nonEmpty(request["body"])
+        var title = nonEmpty(request["titl"]) ?? app.name
+        var subtitle = nonEmpty(request["subt"])
+        var body = nonEmpty(request["body"])
+        var symbol = "app.badge.fill"
+        var link: URL?
+        var appName = app.name
+        // Some of macOS's own notifications arrive with no text Brim can
+        // read (their words are looked up by the system as they're shown).
+        // The ones Brim knows get their meaning in plain words; for any
+        // other, the log notes which fields it had, to add it later.
+        if nonEmpty(request["titl"]) == nil, subtitle == nil, body == nil {
+            if let notice = SystemNotice.known(bundleID) {
+                title = notice.title
+                body = notice.body
+                symbol = notice.symbol
+                link = notice.link
+                appName = notice.app
+            } else {
+                let fields = request.keys.sorted().joined(separator: ", ")
+                NotificationLog.write("         (no text from \(bundleID); its fields: \(fields))")
+            }
+        }
         guard subtitle != nil || body != nil || !title.isEmpty else { return nil }
 
         var date = Date()
@@ -366,11 +385,13 @@ final class NotificationMirror {
         }
         if abs(date.timeIntervalSinceNow) > 86_400 * 365 { date = Date() }  // sanity check
 
-        return NotchAlert(symbol: "app.badge.fill", tint: .accentColor,
-                          title: title, subtitle: subtitle, body: body,
-                          appIcon: app.icon, appName: app.name,
-                          bundleID: bundleID.isEmpty ? nil : bundleID,
-                          duration: 5, date: date)
+        var alert = NotchAlert(symbol: symbol, tint: .accentColor,
+                               title: title, subtitle: subtitle, body: body,
+                               appIcon: link == nil ? app.icon : nil, appName: appName,
+                               bundleID: bundleID.isEmpty ? nil : bundleID,
+                               duration: 5, date: date)
+        alert.link = link
+        return alert
     }
 
     private func nonEmpty(_ value: Any?) -> String? {
@@ -409,6 +430,30 @@ final class NotificationMirror {
             return "\(modified):\(size)"
         }
         .joined(separator: "|")
+    }
+}
+
+/// macOS notifications that come without readable text, in plain words.
+struct SystemNotice {
+    let app: String
+    let symbol: String
+    let title: String
+    let body: String
+    /// Where a click takes you.
+    let link: URL?
+
+    static func known(_ bundleID: String) -> SystemNotice? {
+        switch bundleID.lowercased() {
+        case "com.apple.wifi.usernotifications.autohotspot":
+            // The Wi-Fi you're on has no internet, and your iPhone's
+            // Personal Hotspot is nearby.
+            return SystemNotice(app: "Wi-Fi", symbol: "personalhotspot",
+                                title: "No Internet on This Wi-Fi",
+                                body: "Your iPhone's Personal Hotspot is nearby. Click to choose it in Wi-Fi settings.",
+                                link: URL(string: "x-apple.systempreferences:com.apple.wifi-settings-extension"))
+        default:
+            return nil
+        }
     }
 }
 

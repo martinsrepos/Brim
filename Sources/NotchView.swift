@@ -321,11 +321,17 @@ struct IslandRootView: View {
                 .transition(contentTransition)
         case .banner:
             if let alert = alerts.current {
-                BannerView(alert: alert, topInset: vm.contentTopInset, hidesPreview: vm.hidesPreviews)
+                BannerView(alert: alert, topInset: vm.contentTopInset, hidesPreview: vm.hidesPreviews,
+                           onAnswer: { yes in
+                               vm.ui.bannerClicked = true
+                               alerts.answer(alert, yes: yes)
+                           })
                     // A click (no drag) opens what it's about: the app that
-                    // sent it, the downloaded file, or its action.
+                    // sent it, the downloaded file, or its action. A question
+                    // only answers to its buttons.
                     .contentShape(Rectangle())
                     .onTapGesture {
+                        guard alert.prompt == nil else { return }
                         if alerts.openFromBanner(alert) { vm.ui.bannerClicked = true }
                     }
                     .id(alert.id)
@@ -1847,6 +1853,8 @@ struct BannerView: View {
     let topInset: CGFloat
     /// Locked screen: show which app it's from, but not what it says.
     var hidesPreview = false
+    /// A question's buttons: true for yes.
+    var onAnswer: ((Bool) -> Void)? = nil
 
     private var isPrivate: Bool { hidesPreview && alert.appName != nil }
 
@@ -1861,7 +1869,7 @@ struct BannerView: View {
                             .font(.system(size: fs(13), weight: .semibold))
                             .lineLimit(1)
                         Spacer(minLength: 0)
-                        if alert.battery == nil && alert.levelFraction == nil {
+                        if alert.battery == nil && alert.levelFraction == nil && alert.prompt == nil {
                             Text(alert.date.notchTimestamp)
                                 .font(.system(size: fs(11)))
                                 .foregroundStyle(.tertiary)
@@ -1891,6 +1899,29 @@ struct BannerView: View {
                 }
                 if let fraction = alert.levelFraction {
                     LevelBarView(fraction: fraction)
+                }
+                if let prompt = alert.prompt {
+                    // Two answers, the yes in the accent colour.
+                    HStack(spacing: 6) {
+                        Button { onAnswer?(false) } label: {
+                            Text(prompt.no)
+                                .font(.system(size: fs(12), weight: .semibold))
+                                .padding(.horizontal, 11)
+                                .frame(height: fs(26))
+                                .background(Capsule().fill(Color.primary.opacity(0.14)))
+                        }
+                        .buttonStyle(PressStyle())
+                        Button { onAnswer?(true) } label: {
+                            Text(prompt.yes)
+                                .font(.system(size: fs(12), weight: .semibold))
+                                .foregroundStyle(Color.white)
+                                .padding(.horizontal, 11)
+                                .frame(height: fs(26))
+                                .background(Capsule().fill(Color.accentColor))
+                        }
+                        .buttonStyle(PressStyle())
+                    }
+                    .fixedSize()
                 }
             }
             .foregroundStyle(.primary)

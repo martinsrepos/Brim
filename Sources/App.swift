@@ -41,6 +41,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let builtInBrightness = BuiltInBrightnessWatcher()
     private var accessoryBatteries: AccessoryBatteryMonitor?
     private let focus = FocusMonitor()
+    /// Looks every ten seconds for a meeting starting (Do Not Disturb prompt).
+    private var meetingWatch: Timer?
     private var settings: SettingsWindowController!
     private var power: PowerMonitor?
     private var bluetooth: BluetoothMonitor?
@@ -184,6 +186,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             case .startFocus: self?.timer.startFocus()
             case .openUpdate: self?.settings.show(pane: .about)
             case .openLiveActivity(let id): self?.vm.liveActivities.open(id)
+            case .meetingFocusOn(let end): self?.vm.meetingFocus.turnOn(until: end)
+            }
+        }
+        // A meeting is starting and nothing's silenced: ask, in the island.
+        vm.meetingFocus.onPrompt = { [weak self] event in
+            var prompt = NotchAlert(symbol: "moon.fill", tint: .indigo,
+                                    title: "Turn on Do Not Disturb?",
+                                    body: "\(event.title) is starting. It turns off when the meeting's over.",
+                                    duration: 20)
+            prompt.prompt = AlertPrompt(yes: "Turn On", no: "Not Now", onYes: .meetingFocusOn(until: event.end))
+            self?.alerts.post(prompt, remember: false)
+        }
+        if vm.meetingFocus.isEnabled { vm.meetingFocus.refresh() }
+        meetingWatch = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, !self.vm.demo.isRunning else { return }
+                self.vm.meetingFocus.check(next: self.vm.calendar.next, focusOn: self.focus.isActive,
+                                           callActive: self.vm.currentCall != nil)
             }
         }
         timer.onFinish = { [weak self] kind in

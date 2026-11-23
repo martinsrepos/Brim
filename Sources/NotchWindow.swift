@@ -776,6 +776,12 @@ final class NotchWindowController: NSObject {
                 hoverStart = nil
                 return
             }
+            // A question in the island stays a question: hovering it to
+            // reach its buttons doesn't open the panel.
+            if vm.mode == .banner, vm.alerts.current?.prompt != nil {
+                hoverStart = nil
+                return
+            }
             // A banner opens a little later than the pill, leaving time to
             // swipe it away instead.
             let delay = vm.mode == .banner ? 0.3 : 0.08

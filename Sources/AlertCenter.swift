@@ -48,6 +48,11 @@ struct NotchAlert: Identifiable, Equatable {
     /// Its icon already has its shape (macOS's copy of an iPhone app's icon),
     /// rather than a plain square that needs iOS's corners.
     var iconHasShape = false
+    /// Where clicking it goes, when that's a place rather than an app (a
+    /// System Settings page).
+    var link: URL? = nil
+    /// A question with two buttons instead of a click.
+    var prompt: AlertPrompt? = nil
 
     static func == (lhs: NotchAlert, rhs: NotchAlert) -> Bool { lhs.id == rhs.id && lhs.revision == rhs.revision }
 
@@ -63,6 +68,16 @@ enum AlertAction: Equatable {
     case openUpdate
     /// Another app's Live Activity: open the app (or iPhone Mirroring).
     case openLiveActivity(String)
+    /// "Turn on Do Not Disturb?" said yes, for a meeting that ends then.
+    case meetingFocusOn(until: Date)
+}
+
+/// A question in the island with two answers, like "Turn on Do Not
+/// Disturb?" Yes / Not Now. Not Now just puts it away.
+struct AlertPrompt: Equatable {
+    var yes: String
+    var no: String
+    var onYes: AlertAction
 }
 
 /// Queues notifications, shows them one at a time, and keeps a short history
@@ -196,13 +211,20 @@ final class AlertCenter {
     /// Whether clicking it leads somewhere: an action, a file, or an app
     /// that's actually on this Mac (helpers count as their main app).
     func canOpen(_ alert: NotchAlert) -> Bool {
-        if alert.action != nil || alert.fileURL != nil { return true }
+        if alert.action != nil || alert.fileURL != nil || alert.link != nil { return true }
         guard let bundleID = alert.bundleID else { return false }
         let target = bundleID.lowercased().hasPrefix("web.") ? "com.apple.Safari" : bundleID
         return AppLocator.url(for: target) != nil
     }
 
     /// Sends the banner on screen away now (swiped up); it stays in the list.
+    /// One of a question's two buttons: the yes runs its action; either
+    /// answer puts the question away.
+    func answer(_ alert: NotchAlert, yes: Bool) {
+        if yes, let action = alert.prompt?.onYes { onAction?(action) }
+        if current?.id == alert.id { dismissCurrent() }
+    }
+
     /// The next waiting one comes in.
     func dismissCurrent() {
         guard current != nil else { return }
@@ -240,6 +262,10 @@ final class AlertCenter {
         }
         if let file = alert.fileURL {
             NSWorkspace.shared.activateFileViewerSelecting([file])
+            return
+        }
+        if let link = alert.link {
+            NSWorkspace.shared.open(link)
             return
         }
         guard let bundleID = alert.bundleID else { return }

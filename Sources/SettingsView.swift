@@ -459,6 +459,32 @@ struct SettingsView: View {
             Toggle(isOn: Binding(get: { vm.showCalendar }, set: { vm.setShowCalendar($0) })) {
                 RowLabel("Upcoming Meetings", symbol: "calendar", color: .red)
             }
+            if vm.showCalendar {
+                let focus = vm.meetingFocus
+                Toggle(isOn: Binding(get: { focus.isEnabled }, set: { focus.setEnabled($0) })) {
+                    RowLabel("Offer Do Not Disturb", symbol: "moon.fill", color: .indigo)
+                }
+                if focus.isEnabled {
+                    LabeledContent("Shortcuts") {
+                        switch focus.setup {
+                        case .ready:
+                            Label("Ready", systemImage: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                        case .checking:
+                            Text("Checking\u{2026}").foregroundStyle(.secondary)
+                        case .adding:
+                            Text("Click Add Shortcut in Shortcuts").foregroundStyle(.secondary)
+                        case .missing:
+                            Button("Add Shortcuts\u{2026}") { focus.install() }
+                        case .failed(let reason):
+                            HStack(spacing: 8) {
+                                Text("Couldn't add them: \(reason)").foregroundStyle(.secondary)
+                                Button("Try Again") { focus.install() }
+                            }
+                        }
+                    }
+                }
+            }
             Toggle(isOn: Binding(get: { vm.showReminders }, set: { vm.setShowReminders($0) })) {
                 RowLabel("Reminders Due Soon", symbol: "checklist", color: .orange)
             }
@@ -471,7 +497,7 @@ struct SettingsView: View {
         } header: {
             Text("Activities")
         } footer: {
-            footnote("Meetings show 15 minutes before they start, with a Join button for Zoom, Meet, Teams and FaceTime links. Reminders with a time show 15 minutes before they're due. Calls show while FaceTime, Zoom, Teams, Webex or Skype is on a call, with a mute button.")
+            footnote("Meetings show 15 minutes before they start, with a Join button for Zoom, Meet, Teams and FaceTime links. Offer Do Not Disturb asks in the island as a meeting from your calendar starts, if no Focus is on, and turns it off again when the meeting's call hangs up (or at its end time if there was no call). macOS only lets apps switch Focus through Shortcuts, so Brim makes two small shortcuts for it (Brim Focus On and Brim Focus Off) and the Shortcuts app asks you once to add each. Reminders with a time show 15 minutes before they're due. Calls show while FaceTime, Zoom, Teams, Webex or Skype is on a call, with a mute button.")
         }
 
         Section {

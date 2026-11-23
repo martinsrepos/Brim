@@ -50,7 +50,7 @@ https://github.com/user-attachments/assets/b6e57fea-115d-4773-99e3-25a7d732c283
 - Deliveries, rides and downloads with their progress, like on iPhone
 - Two things at once, like iPhone
 - Timers, stopwatches and Focus rounds
-- Upcoming meetings with Join
+- Upcoming meetings with Join, and an offer to turn on Do Not Disturb as they start
 - Calls with Mute and a waveform that follows your voice
 - Reminders with Done, kept in view until you tick them off
 - Downloads and AirDrop
